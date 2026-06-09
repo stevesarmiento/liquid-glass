@@ -6,3 +6,4 @@ target/
 dist/
 packages/*/dist/
 packages/liquid-glass/wasm/
+/references/
