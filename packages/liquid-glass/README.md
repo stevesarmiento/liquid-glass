@@ -7,8 +7,9 @@ The package exposes:
 - deterministic lens math and displacement map generation
 - TypeScript fallback engine
 - optional Rust/WASM engine
-- DOM/SVG controller
-- React wrapper via `liquid-glass/react`
+- scene-level DOM/SVG and canvas controller
+- component-local canvas renderer
+- React primitives via `liquid-glass/react`
 
 ## Install
 
@@ -39,6 +40,27 @@ export function Example() {
   );
 }
 ```
+
+`LiquidGlass` is the scene-level wrapper. For design-system primitives such as slider thumbs, switch knobs, and buttons, use `GlassNode` and `GlassSurface`:
+
+```tsx
+import { GlassNode } from "liquid-glass/react";
+
+<GlassNode
+  lens={{ width: 63, height: 34, radius: 80 }}
+  sourceWidth={244}
+  sourceHeight={44}
+  lensX={90}
+  lensY={5}
+  sourceChildren={<span className="local-control-source" />}
+  drawSource={({ ctx }) => {
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, 244, 44);
+  }}
+/>;
+```
+
+For non-React component adapters, use `renderLocalGlassCanvas` from the root package.
 
 ## Contributor Setup
 

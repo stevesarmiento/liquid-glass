@@ -14,6 +14,7 @@
     "test:wasm": "cd packages/liquid-glass && bun run test:wasm",
     "build:wasm": "cd packages/liquid-glass && bun run build:wasm",
     "playground": "cd packages/playground && bun run dev",
+    "docs": "cd packages/docs && bun run dev",
     "download": "node scripts/download.mjs",
     "extract:sourcemaps": "node scripts/extract-sourcemaps.mjs",
     "prototype": "node scripts/serve-prototype.mjs",

@@ -1,0 +1,45 @@
+export interface GlassFilterBleedInput {
+  blur: number;
+  chroma: number;
+  scaleX: number;
+  scaleY: number;
+}
+
+export interface GlassFilterVersionInput extends GlassFilterBleedInput {
+  sourceWidth: number;
+  sourceHeight: number;
+  lensWidth: number;
+  lensHeight: number;
+  radius: number;
+  mapSize: number;
+  depth: number;
+  dome: number;
+  splay: number;
+  glow: number;
+  edge: number;
+}
+
+export function getGlassFilterBleed({ blur, chroma, scaleX, scaleY }: GlassFilterBleedInput): number {
+  return Math.ceil(Math.max(scaleX, scaleY) * (1 + 0.2 * chroma) + blur + 4);
+}
+
+export function getGlassFilterVersion(input: GlassFilterVersionInput): string {
+  return [
+    Math.round(input.sourceWidth),
+    Math.round(input.sourceHeight),
+    Math.round(input.lensWidth),
+    Math.round(input.lensHeight),
+    Math.round(input.radius * 100),
+    Math.round(input.mapSize),
+    Math.round(input.scaleX * 100),
+    Math.round(input.scaleY * 100),
+    Math.round(input.chroma * 1000),
+    Math.round(input.blur * 100),
+    Math.round(input.depth * 100),
+    Math.round(input.dome * 100),
+    Math.round(input.splay * 1000),
+    Math.round(input.glow * 1000),
+    Math.round(input.edge * 1000),
+  ].join("-");
+}
+

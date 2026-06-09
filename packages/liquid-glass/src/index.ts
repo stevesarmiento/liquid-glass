@@ -11,6 +11,9 @@ export {
   targetBleed,
 } from "./engine/ts-engine";
 export { compareEngineOutput } from "./engine/parity";
+export { getGlassFilterBleed, getGlassFilterVersion } from "./web/filter-version";
+export { renderLocalGlassCanvas } from "./web/local-canvas";
+export { GLASS_TINTS, createGlassTint, resolveGlassTint } from "./web/tints";
 export type {
   ActiveLiquidGlassEngineMode,
   DisplacementMap,
@@ -24,6 +27,15 @@ export type {
   LiquidGlassEngineOptions,
   LiquidGlassRenderMode,
 } from "./engine/types";
+export type {
+  GlassCanvasSource,
+  GlassCanvasSourceInput,
+  GlassNodeMetrics,
+  GlassRendererMode,
+  LocalGlassCanvasRenderInput,
+  LocalGlassCanvasRenderResult,
+} from "./web/local-canvas";
+export type { GlassTint, GlassTintInput, GlassTintName, GlassTintPreset } from "./web/tints";
 export {
   createLiquidGlassController,
   type LiquidGlassController,

@@ -11,6 +11,13 @@ import type {
 } from "../engine/types";
 import { setAttr, setHref, setStyle } from "./dom";
 import { displacementMapToPngDataUrl } from "./png";
+import {
+  CANVAS_STRENGTH,
+  resizeCanvas,
+  roundedRectInside,
+  sampleGlassChannel,
+  specularAlpha,
+} from "./render-utils";
 import { createSvgFilter, type SvgFilterElements } from "./svg-filter";
 
 export interface LiquidGlassControllerStats {
@@ -321,16 +328,6 @@ function createCanvasRenderer() {
       const output = ctx.createImageData(lensW, lensH);
       const out = output.data;
       const scene = scenePixels.data;
-      const map = input.map.rgba;
-      const mapSize = input.map.width;
-      const rawBaseScale = Math.max(input.lens.scaleX, input.lens.scaleY);
-      const canvasStrength = 0.62;
-      const baseScale = rawBaseScale * canvasStrength;
-      const ratioX = rawBaseScale > 0 ? input.lens.scaleX / rawBaseScale : 0;
-      const ratioY = rawBaseScale > 0 ? input.lens.scaleY / rawBaseScale : 0;
-      const scaleR = baseScale * (1 + 0.2 * input.lens.chroma);
-      const scaleG = baseScale * (1 + 0.1 * input.lens.chroma);
-      const scaleB = baseScale;
 
       for (let y = 0; y < lensH; y += 1) {
         for (let x = 0; x < lensW; x += 1) {
@@ -340,22 +337,29 @@ function createCanvasRenderer() {
             continue;
           }
 
-          const mx = Math.max(0, Math.min(mapSize - 1, Math.floor((x / lensW) * mapSize)));
-          const my = Math.max(0, Math.min(mapSize - 1, Math.floor((y / lensH) * mapSize)));
-          const mapIndex = (my * mapSize + mx) * 4;
-          const mapDx = (map[mapIndex] / 255 - 0.5) * ratioX;
-          const mapDy = (map[mapIndex + 1] / 255 - 0.5) * ratioY;
-          const gx = left + x;
-          const gy = top + y;
+          const sampleInput = {
+            source: scene,
+            sourceWidth: width,
+            sourceHeight: height,
+            map: input.map,
+            lens: input.lens,
+            lensWidth: lensW,
+            lensHeight: lensH,
+            lensX: left,
+            lensY: top,
+            localX: x,
+            localY: y,
+            pixelRatio: 1,
+            strength: CANVAS_STRENGTH,
+          };
 
-          out[outIndex] = sampleScene(scene, width, height, gx + mapDx * scaleR, gy + mapDy * scaleR, 0);
-          out[outIndex + 1] = sampleScene(scene, width, height, gx + mapDx * scaleG, gy + mapDy * scaleG, 1);
-          out[outIndex + 2] = sampleScene(scene, width, height, gx + mapDx * scaleB, gy + mapDy * scaleB, 2);
+          out[outIndex] = sampleGlassChannel(sampleInput, 0);
+          out[outIndex + 1] = sampleGlassChannel(sampleInput, 1);
+          out[outIndex + 2] = sampleGlassChannel(sampleInput, 2);
           out[outIndex + 3] = 255;
 
-          const spec = Math.max(0, map[mapIndex + 2] - 128) / 127;
-          if (spec > 0) {
-            const alpha = Math.min(0.52, spec * 0.52);
+          const alpha = specularAlpha(input.map, x, y, lensW, lensH);
+          if (alpha > 0) {
             out[outIndex] = Math.round(out[outIndex] * (1 - alpha) + 255 * alpha);
             out[outIndex + 1] = Math.round(out[outIndex + 1] * (1 - alpha) + 255 * alpha);
             out[outIndex + 2] = Math.round(out[outIndex + 2] * (1 - alpha) + 255 * alpha);
@@ -366,13 +370,6 @@ function createCanvasRenderer() {
       ctx.putImageData(output, left, top);
     },
   };
-}
-
-function resizeCanvas(canvas: HTMLCanvasElement, width: number, height: number): void {
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width;
-    canvas.height = height;
-  }
 }
 
 function drawCoverImage(
@@ -390,43 +387,4 @@ function drawCoverImage(
   const drawH = image.naturalHeight * scale;
   ctx.clearRect(0, 0, width, height);
   ctx.drawImage(image, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH);
-}
-
-function roundedRectInside(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-): boolean {
-  const rx = Math.min(radius, width / 2);
-  const ry = Math.min(radius, height / 2);
-  const px = x < rx ? rx - x : x > width - rx ? x - (width - rx) : 0;
-  const py = y < ry ? ry - y : y > height - ry ? y - (height - ry) : 0;
-  return px * px + py * py <= rx * ry;
-}
-
-function sampleScene(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  x: number,
-  y: number,
-  channel: number,
-): number {
-  const sx = Math.max(0, Math.min(width - 1, x));
-  const sy = Math.max(0, Math.min(height - 1, y));
-  const x0 = Math.floor(sx);
-  const y0 = Math.floor(sy);
-  const x1 = Math.min(width - 1, x0 + 1);
-  const y1 = Math.min(height - 1, y0 + 1);
-  const tx = sx - x0;
-  const ty = sy - y0;
-  const i00 = (y0 * width + x0) * 4 + channel;
-  const i10 = (y0 * width + x1) * 4 + channel;
-  const i01 = (y1 * width + x0) * 4 + channel;
-  const i11 = (y1 * width + x1) * 4 + channel;
-  const a = data[i00] * (1 - tx) + data[i10] * tx;
-  const b = data[i01] * (1 - tx) + data[i11] * tx;
-  return a * (1 - ty) + b * ty;
 }
