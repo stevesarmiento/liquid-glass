@@ -4,6 +4,7 @@ import styled, { createGlobalStyle } from "styled-components";
 
 import Topbar from "./components/Common/Topbar";
 import rootNav from "./nav";
+import GlassModalPage from "./pages/components/GlassModalPage";
 import GlassSliderPage from "./pages/components/GlassSliderPage";
 import GlassSwitchPage from "./pages/components/GlassSwitchPage";
 import GuidesPage from "./pages/guides";
@@ -116,6 +117,7 @@ const Content = styled.main`
 const routes: Record<string, ComponentType> = {
   "/": IntroductionPage,
   "/guides": GuidesPage,
+  "/components/glass-modal": GlassModalPage,
   "/components/glass-slider": GlassSliderPage,
   "/components/glass-switch": GlassSwitchPage,
 };

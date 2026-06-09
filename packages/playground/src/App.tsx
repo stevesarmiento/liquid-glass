@@ -1,5 +1,5 @@
 import { type ComponentProps, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { GlassSlider, GlassSwitch, type GlassComponentSize } from "@liquid-glass/design-system";
+import { GlassModal, GlassSlider, GlassSwitch, type GlassComponentSize } from "@liquid-glass/design-system";
 
 import {
   DEFAULT_LENS_PARAMS,
@@ -105,6 +105,7 @@ export default function App() {
   const [customTint, setCustomTint] = useState(INITIAL_CUSTOM_TINT);
   const [sliderValue, setSliderValue] = useState(62);
   const [switchLensOverrideEnabled, setSwitchLensOverrideEnabled] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
   const renderMode: LiquidGlassRenderMode = "target";
   const [stats, setStats] = useState<LiquidGlassControllerStats | null>(null);
   const [controlsOpen, setControlsOpen] = useState(true);
@@ -142,6 +143,22 @@ export default function App() {
       glow: lens.glow,
       edge: lens.edge,
       blur: Math.min(lens.blur, 3),
+      mapSize: lens.mapSize,
+    }),
+    [lens],
+  );
+  const modalLens = useMemo<Partial<Omit<LensParams, "width" | "height">>>(
+    () => ({
+      radius: lens.radius,
+      scaleX: lens.scaleX,
+      scaleY: lens.scaleY,
+      chroma: lens.chroma,
+      depth: lens.depth,
+      dome: lens.dome,
+      splay: lens.splay,
+      glow: lens.glow,
+      edge: lens.edge,
+      blur: lens.blur,
       mapSize: lens.mapSize,
     }),
     [lens],
@@ -352,9 +369,38 @@ export default function App() {
             glassTint={glassTint}
             renderer={INITIAL_RENDERER}
           />
+          <div className="modalPreview componentPreview">
+            <button className="modalPreviewButton" onClick={() => setIsModalVisible(true)} type="button">
+              Modal
+            </button>
+          </div>
         </div>
         <div className="attribution">Giovanni Battista Tiepolo, Rinaldo and Armida in Her Garden</div>
       </section>
+
+      <GlassModal
+        footer={
+          <button className="modalConfirmButton" onClick={() => setIsModalVisible(false)} type="button">
+            Done
+          </button>
+        }
+        glassSettings={{
+          lens: modalLens,
+          surfaceBlur: 0,
+          tint: glassTint,
+        }}
+        header="Glass modal"
+        isVisible={isModalVisible}
+        onClose={() => setIsModalVisible(false)}
+        renderer={INITIAL_RENDERER}
+        engineMode={engineMode}
+        width={380}
+      >
+        <div className="modalPreviewBody">
+          <p>Use the playground controls to tune this modal glass.</p>
+          <p>Tint, lens, optics, and light settings are forwarded into the modal.</p>
+        </div>
+      </GlassModal>
 
       <div
         ref={floatingControlsRef}
@@ -737,10 +783,10 @@ button, input { font: inherit; }
   top: 72%;
   z-index: 6;
   display: grid;
-  grid-template-columns: minmax(280px, 380px) minmax(150px, 210px);
+  grid-template-columns: minmax(280px, 380px) minmax(150px, 210px) 96px;
   align-items: center;
   gap: 14px;
-  width: min(620px, calc(100% - 48px));
+  width: min(734px, calc(100% - 48px));
   transform: translate(-50%, -50%);
   pointer-events: auto;
 }
@@ -779,6 +825,35 @@ button, input { font: inherit; }
   font-weight: 680;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+.modalPreview {
+  min-height: 132px;
+  padding: 18px;
+}
+.modalPreviewButton,
+.modalConfirmButton {
+  min-height: 38px;
+  padding: 0 16px;
+  color: #ffffff;
+  background: #1a88f8;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(26, 136, 248, 0.24);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 720;
+}
+.modalPreviewButton:active,
+.modalConfirmButton:active {
+  transform: scale(0.97);
+}
+.modalPreviewBody {
+  display: grid;
+  gap: 12px;
+  max-width: 320px;
+}
+.modalPreviewBody p {
+  margin: 0;
 }
 .attribution {
   position: absolute;

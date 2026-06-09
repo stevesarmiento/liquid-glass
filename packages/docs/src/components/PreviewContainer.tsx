@@ -11,7 +11,6 @@ const Preview = styled.div`
   border-radius: 8px;
 `;
 
-export default function PreviewContainer({ children }: { children: ReactNode }) {
-  return <Preview>{children}</Preview>;
+export default function PreviewContainer({ children, className }: { children: ReactNode; className?: string }) {
+  return <Preview className={className}>{children}</Preview>;
 }
-
