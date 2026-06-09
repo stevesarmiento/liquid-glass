@@ -12,11 +12,12 @@ import type {
   LensParams,
   LiquidGlassEngineMode
 } from "liquid-glass";
+import type { GlassComponentSize } from "../sizes";
 
 export interface GlassSliderProps
   extends Omit<
     InputHTMLAttributes<HTMLInputElement>,
-    "children" | "defaultValue" | "max" | "min" | "onChange" | "type" | "value"
+    "children" | "defaultValue" | "max" | "min" | "onChange" | "size" | "type" | "value"
   > {
   /** Initial value for uncontrolled sliders. */
   defaultValue?: number;
@@ -32,6 +33,8 @@ export interface GlassSliderProps
   onValueChange?: (value: number) => void;
   /** Displays the current value beside the label. */
   showValue?: boolean;
+  /** Preset size for the slider geometry. Manual sizing props override preset values. */
+  size?: GlassComponentSize;
   /** Width of the full slider control. */
   sliderWidth?: CSSProperties["width"];
   /** Height of the slider interaction area. */

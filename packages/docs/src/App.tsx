@@ -5,6 +5,7 @@ import styled, { createGlobalStyle } from "styled-components";
 import Topbar from "./components/Common/Topbar";
 import rootNav from "./nav";
 import GlassSliderPage from "./pages/components/GlassSliderPage";
+import GlassSwitchPage from "./pages/components/GlassSwitchPage";
 import GuidesPage from "./pages/guides";
 import IntroductionPage from "./pages";
 
@@ -116,6 +117,7 @@ const routes: Record<string, ComponentType> = {
   "/": IntroductionPage,
   "/guides": GuidesPage,
   "/components/glass-slider": GlassSliderPage,
+  "/components/glass-switch": GlassSwitchPage,
 };
 
 export default function App() {
@@ -174,4 +176,3 @@ function normalizePath(path: string): string {
   if (!path || path === "/index.html") return "/";
   return path.endsWith("/") && path.length > 1 ? path.slice(0, -1) : path;
 }
-

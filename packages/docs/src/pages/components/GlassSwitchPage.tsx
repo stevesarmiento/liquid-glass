@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { GlassSlider } from "@liquid-glass/design-system";
+import { GlassSwitch } from "@liquid-glass/design-system";
 import styled from "styled-components";
 
 import PreviewContainer from "../../components/PreviewContainer";
@@ -10,14 +9,15 @@ const Stack = styled.div`
 `;
 
 const SizeGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px 28px;
+  display: flex;
   align-items: center;
+  gap: 26px;
+  flex-wrap: wrap;
 `;
 
 const SizeItem = styled.div`
   display: grid;
+  justify-items: center;
   gap: 8px;
 `;
 
@@ -38,23 +38,16 @@ const CodeBlock = styled.pre`
   font-size: 13px;
 `;
 
-export default function GlassSliderPage() {
-  const [value, setValue] = useState(58);
-
+export default function GlassSwitchPage() {
   return (
     <Stack>
       <div>
-        <h1>Glass Slider</h1>
-        <p>Range input with a glass thumb node powered by the liquid-glass primitives.</p>
+        <h1>Glass Switch</h1>
+        <p>Boolean control with a draggable glass thumb node powered by the liquid-glass primitives.</p>
       </div>
 
       <PreviewContainer>
-        <GlassSlider
-          label="Exposure"
-          onValueChange={setValue}
-          showValue
-          value={value}
-        />
+        <GlassSwitch defaultChecked size="md" />
       </PreviewContainer>
 
       <div>
@@ -64,7 +57,7 @@ export default function GlassSliderPage() {
             {(["sm", "md", "lg", "xl"] as const).map((size) => (
               <SizeItem key={size}>
                 <SizeLabel>{size}</SizeLabel>
-                <GlassSlider defaultValue={58} size={size} />
+                <GlassSwitch defaultChecked size={size} />
               </SizeItem>
             ))}
           </SizeGrid>
@@ -73,15 +66,9 @@ export default function GlassSliderPage() {
 
       <div>
         <h2>Usage</h2>
-        <CodeBlock>{`import { GlassSlider } from "@liquid-glass/design-system";
+        <CodeBlock>{`import { GlassSwitch } from "@liquid-glass/design-system";
 
-<GlassSlider
-  label="Exposure"
-  size="md"
-  showValue
-  value={value}
-  onValueChange={setValue}
-/>`}</CodeBlock>
+<GlassSwitch defaultChecked size="md" />`}</CodeBlock>
       </div>
     </Stack>
   );

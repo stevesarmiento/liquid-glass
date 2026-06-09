@@ -32,16 +32,23 @@ import {
   glassSurfaceClassName
 } from "./styles";
 import type { GlassSliderProps } from "./types";
+import { GLASS_SLIDER_SIZE_PRESETS } from "../sizes";
 
 const DEFAULT_MIN = 0;
 const DEFAULT_MAX = 100;
-const DEFAULT_CONTROL_HEIGHT = 44;
-const DEFAULT_LENS_WIDTH = 63;
-const DEFAULT_LENS_HEIGHT = 34;
-const DEFAULT_LENS_RADIUS = 80;
-const DEFAULT_SLIDER_WIDTH = 244;
 const DEFAULT_STEP = 1;
-const DEFAULT_TRACK_HEIGHT = 9;
+const DEFAULT_SLIDER_OPTICS: Omit<LensParams, "width" | "height" | "radius"> = {
+  scaleX: 38,
+  scaleY: 38,
+  chroma: 0.45,
+  depth: 3.5,
+  dome: 0,
+  splay: 0.49,
+  glow: 0.55,
+  edge: 0.55,
+  blur: 0.8,
+  mapSize: 256
+};
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -152,10 +159,11 @@ const GlassSlider = ({
   onValueChange,
   renderer,
   showValue = false,
-  sliderWidth = DEFAULT_SLIDER_WIDTH,
+  size = "md",
+  sliderWidth,
   step,
   style,
-  trackHeight = DEFAULT_TRACK_HEIGHT,
+  trackHeight,
   value,
   valueFormatter,
   ...props
@@ -176,25 +184,19 @@ const GlassSlider = ({
 
   const valuePercent = getPercent(currentValue, min, max);
   const valueRatio = valuePercent / 100;
+  const sizePreset = GLASS_SLIDER_SIZE_PRESETS[size];
   const lens: LensParams = {
-    width: glassLens?.width ?? DEFAULT_LENS_WIDTH,
-    height: glassLens?.height ?? DEFAULT_LENS_HEIGHT,
-    radius: glassLens?.radius ?? DEFAULT_LENS_RADIUS,
-    scaleX: glassLens?.scaleX ?? 38,
-    scaleY: glassLens?.scaleY ?? 38,
-    chroma: glassLens?.chroma ?? 0.45,
-    depth: glassLens?.depth ?? 3.5,
-    dome: glassLens?.dome ?? 0,
-    splay: glassLens?.splay ?? 0.49,
-    glow: glassLens?.glow ?? 0.55,
-    edge: glassLens?.edge ?? 0.55,
-    blur: glassLens?.blur ?? 0.8,
-    mapSize: glassLens?.mapSize ?? 256
+    ...DEFAULT_SLIDER_OPTICS,
+    ...sizePreset.lens,
+    ...glassLens
   };
   const isGlassActive = !disabled && isDragging;
   const formattedValue = valueFormatter ? valueFormatter(currentValue) : currentValue;
-  const resolvedControlHeight = controlHeight ?? Math.max(DEFAULT_CONTROL_HEIGHT, lens.height);
-  const resolvedSliderWidth = typeof sliderWidth === "number" ? `${sliderWidth}px` : String(sliderWidth);
+  const resolvedControlHeight = controlHeight ?? Math.max(sizePreset.controlHeight, lens.height);
+  const resolvedSliderWidthValue = sliderWidth ?? sizePreset.sliderWidth;
+  const resolvedSliderWidth =
+    typeof resolvedSliderWidthValue === "number" ? `${resolvedSliderWidthValue}px` : String(resolvedSliderWidthValue);
+  const resolvedTrackHeight = trackHeight ?? sizePreset.trackHeight;
   const lensGeometry = useMemo(() => {
     const travel = Math.max(0, controlSize.width - lens.width);
     const lensX = travel * valueRatio;
@@ -219,14 +221,21 @@ const GlassSlider = ({
     const sourceBackground = getCanvasBackgroundColor(controlRef.current ?? ctx.canvas);
     const trackLeft = metrics.lensWidth / 2;
     const trackWidth = Math.max(0, metrics.sourceWidth - metrics.lensWidth);
-    const trackTop = metrics.sourceHeight / 2 - trackHeight / 2;
+    const trackTop = metrics.sourceHeight / 2 - resolvedTrackHeight / 2;
 
     ctx.fillStyle = sourceBackground;
     ctx.fillRect(0, 0, metrics.sourceWidth, metrics.sourceHeight);
-    drawRoundedRect(ctx, trackLeft, trackTop, trackWidth, trackHeight, trackHeight / 2);
+    drawRoundedRect(ctx, trackLeft, trackTop, trackWidth, resolvedTrackHeight, resolvedTrackHeight / 2);
     ctx.fillStyle = trackColor;
     ctx.fill();
-    drawRoundedRect(ctx, trackLeft, trackTop, trackWidth * (valuePercent / 100), trackHeight, trackHeight / 2);
+    drawRoundedRect(
+      ctx,
+      trackLeft,
+      trackTop,
+      trackWidth * (valuePercent / 100),
+      resolvedTrackHeight,
+      resolvedTrackHeight / 2
+    );
     ctx.fillStyle = fillColor;
     ctx.fill();
   };
@@ -345,7 +354,7 @@ const GlassSlider = ({
           "--lgds-slider-lens-radius": `${lens.radius}px`,
           "--lgds-slider-lens-top": `${lensGeometry.lensY}px`,
           "--lgds-slider-lens-width": `${lens.width}px`,
-          "--lgds-slider-track-height": `${trackHeight}px`,
+          "--lgds-slider-track-height": `${resolvedTrackHeight}px`,
           ...style
         } as CSSProperties
       }

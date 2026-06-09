@@ -1,5 +1,5 @@
-import { type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { GlassSlider } from "@liquid-glass/design-system";
+import { type ComponentProps, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { GlassSlider, GlassSwitch, type GlassComponentSize } from "@liquid-glass/design-system";
 
 import {
   DEFAULT_LENS_PARAMS,
@@ -81,6 +81,11 @@ type FloatingControlsDrag = {
 const FLOATING_CONTROLS_WIDTH = 326;
 const FLOATING_CONTROLS_MARGIN = 16;
 const FLOATING_CONTROLS_BAR_HEIGHT = 44;
+const SWITCH_PREVIEW_SIZES: GlassComponentSize[] = ["sm", "md", "lg", "xl"];
+type SwitchPreviewStackProps = Pick<
+  ComponentProps<typeof GlassSwitch>,
+  "engineMode" | "glassLens" | "glassSurfaceBlur" | "glassTint" | "renderer"
+>;
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -99,6 +104,7 @@ export default function App() {
   const [tintName, setTintName] = useState<GlassTintName>("clear");
   const [customTint, setCustomTint] = useState(INITIAL_CUSTOM_TINT);
   const [sliderValue, setSliderValue] = useState(62);
+  const [switchLensOverrideEnabled, setSwitchLensOverrideEnabled] = useState(false);
   const renderMode: LiquidGlassRenderMode = "target";
   const [stats, setStats] = useState<LiquidGlassControllerStats | null>(null);
   const [controlsOpen, setControlsOpen] = useState(true);
@@ -112,6 +118,21 @@ export default function App() {
       width: 63,
       height: 34,
       radius: 80,
+      scaleX: lens.scaleX,
+      scaleY: lens.scaleY,
+      chroma: lens.chroma,
+      depth: Math.min(lens.depth, 12),
+      dome: Math.min(lens.dome, 80),
+      splay: lens.splay,
+      glow: lens.glow,
+      edge: lens.edge,
+      blur: Math.min(lens.blur, 3),
+      mapSize: lens.mapSize,
+    }),
+    [lens],
+  );
+  const switchLens = useMemo<Partial<LensParams>>(
+    () => ({
       scaleX: lens.scaleX,
       scaleY: lens.scaleY,
       chroma: lens.chroma,
@@ -179,6 +200,7 @@ export default function App() {
   }, []);
 
   function updateLens(key: keyof LensParams, value: number) {
+    setSwitchLensOverrideEnabled(true);
     setLens((current) => ({
       ...current,
       [key]: key === "mapSize" ? Math.round(value) : value,
@@ -309,7 +331,7 @@ export default function App() {
           onPointerDown={(event) => event.stopPropagation()}
           onPointerMove={(event) => event.stopPropagation()}
         >
-          <div className="componentPreview">
+          <div className="sliderPreview componentPreview">
             <GlassSlider
               engineMode={engineMode}
               glassLens={sliderLens}
@@ -323,6 +345,13 @@ export default function App() {
               value={sliderValue}
             />
           </div>
+          <SwitchPreviewStack
+            engineMode={engineMode}
+            glassLens={switchLensOverrideEnabled ? switchLens : undefined}
+            glassSurfaceBlur={0}
+            glassTint={glassTint}
+            renderer={INITIAL_RENDERER}
+          />
         </div>
         <div className="attribution">Giovanni Battista Tiepolo, Rinaldo and Armida in Her Garden</div>
       </section>
@@ -586,6 +615,19 @@ export default function App() {
   );
 }
 
+function SwitchPreviewStack(props: SwitchPreviewStackProps) {
+  return (
+    <div className="switchPreview componentPreview" aria-label="Switch size previews">
+      {SWITCH_PREVIEW_SIZES.map((size) => (
+        <div className="switchPreviewRow" key={size}>
+          <span>{size}</span>
+          <GlassSwitch active defaultChecked size={size} {...props} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function formatValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
@@ -694,13 +736,18 @@ button, input { font: inherit; }
   left: 50%;
   top: 72%;
   z-index: 6;
-  width: min(380px, calc(100% - 48px));
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(150px, 210px);
+  align-items: center;
+  gap: 14px;
+  width: min(620px, calc(100% - 48px));
   transform: translate(-50%, -50%);
   pointer-events: auto;
 }
 .componentPreview {
   display: grid;
   place-items: center;
+  gap: 18px;
   min-height: 132px;
   padding: 32px;
   background: #ffffff;
@@ -709,6 +756,29 @@ button, input { font: inherit; }
   box-shadow:
     0 24px 70px rgba(0,0,0,0.24),
     0 2px 8px rgba(0,0,0,0.08);
+}
+.sliderPreview {
+  min-width: 0;
+}
+.switchPreview {
+  justify-items: stretch;
+  min-height: 132px;
+  padding: 20px 18px;
+  gap: 12px;
+}
+.switchPreviewRow {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.switchPreviewRow span {
+  color: rgba(17,17,17,0.5);
+  font-size: 11px;
+  font-weight: 680;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 .attribution {
   position: absolute;
@@ -1063,8 +1133,21 @@ button, input { font: inherit; }
   body { height: 100vh; overflow: hidden; }
   .shell { grid-template-columns: 1fr; height: 100vh; overflow: hidden; }
   .stage { height: 100vh; min-height: 100vh; }
-  .componentDock { top: 72%; width: min(340px, calc(100% - 32px)); }
+  .componentDock {
+    top: 72%;
+    grid-template-columns: 1fr;
+    width: min(340px, calc(100% - 32px));
+  }
   .componentPreview { padding: 22px; }
+  .switchPreview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-height: 0;
+    padding: 16px;
+  }
+  .switchPreviewRow {
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 8px;
+  }
   .attribution { display: none; }
 }
 `;

@@ -6,13 +6,13 @@ export const SliderContainer = styled.label<{
   $sliderWidth: string;
 }>`
   --lgds-slider-percent: 0%;
-  --lgds-slider-hit-area: 44px;
-  --lgds-slider-lens-height: 34px;
+  --lgds-slider-hit-area: 38px;
+  --lgds-slider-lens-height: 30px;
   --lgds-slider-lens-left: 0px;
   --lgds-slider-lens-radius: 17px;
   --lgds-slider-lens-top: 0px;
-  --lgds-slider-lens-width: 63px;
-  --lgds-slider-track-height: 9px;
+  --lgds-slider-lens-width: 54px;
+  --lgds-slider-track-height: 8px;
   --lgds-slider-track-bg: rgba(148, 163, 184, 0.34);
   --lgds-slider-fill-bg: #1a88f8;
   --lgds-slider-text: #2b2f43;

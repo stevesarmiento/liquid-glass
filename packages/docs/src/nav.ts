@@ -8,7 +8,10 @@ const menu = [
   },
   {
     label: "Components",
-    items: [{ href: "/components/glass-slider", label: "Glass Slider" }],
+    items: [
+      { href: "/components/glass-slider", label: "Glass Slider" },
+      { href: "/components/glass-switch", label: "Glass Switch" },
+    ],
   },
   {
     label: "Foundations",
@@ -20,4 +23,3 @@ const menu = [
 ];
 
 export default menu;
-
