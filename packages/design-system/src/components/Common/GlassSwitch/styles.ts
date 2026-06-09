@@ -5,7 +5,7 @@ export const SwitchContainer = styled.span<{
   $switchWidth: string;
 }>`
   --lgds-switch-color-opacity: 0;
-  --lgds-switch-fill-bg: #34c759;
+  --lgds-switch-fill-bg: #1a88f8;
   --lgds-switch-hit-area: 36px;
   --lgds-switch-lens-height: 22px;
   --lgds-switch-lens-left: 7px;

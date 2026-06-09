@@ -47,6 +47,10 @@ export interface GlassSliderProps
   value?: number;
   /** Glass lens tuning for the thumb node. */
   glassLens?: Partial<LensParams>;
+  /** Color used for the filled portion of the slider track. */
+  fillColor?: CSSProperties["backgroundColor"];
+  /** Color used for the unfilled slider track. */
+  trackColor?: CSSProperties["backgroundColor"];
   /** Dynamic tint forwarded to the glass thumb node. */
   glassTint?: GlassTintName | GlassTintInput | GlassTint;
   /** Optional frosted background blur in px for the glass thumb surface. Defaults to 0. */

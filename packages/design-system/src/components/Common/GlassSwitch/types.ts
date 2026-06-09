@@ -29,6 +29,10 @@ export interface GlassSwitchProps
   defaultChecked?: boolean;
   /** Glass lens tuning for the thumb node. */
   glassLens?: Partial<LensParams>;
+  /** Color used for the switch fill when checked. */
+  fillColor?: CSSProperties["backgroundColor"];
+  /** Color used for the unchecked switch track. */
+  trackColor?: CSSProperties["backgroundColor"];
   /** Optional frosted background blur in px for the glass thumb surface. Defaults to 0. */
   glassSurfaceBlur?: number | string;
   /** Dynamic tint forwarded to the glass thumb node. */

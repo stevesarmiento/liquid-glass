@@ -36,6 +36,8 @@ import { GLASS_SWITCH_SIZE_PRESETS } from "../sizes";
 const ACTIVE_RELEASE_MS = 320;
 const ACTIVE_LENS_SCALE = 1.85;
 const DRAG_THRESHOLD_PX = 4;
+const DEFAULT_FILL_COLOR = "#1a88f8";
+const DEFAULT_TRACK_COLOR = "rgba(148, 163, 184, 0.34)";
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -99,6 +101,7 @@ const GlassSwitch = ({
   defaultChecked = false,
   disabled = false,
   engineMode = "auto",
+  fillColor = DEFAULT_FILL_COLOR,
   glassLens,
   glassSurfaceBlur = 0,
   glassTint,
@@ -117,6 +120,7 @@ const GlassSwitch = ({
   size = "md",
   style,
   switchWidth,
+  trackColor = DEFAULT_TRACK_COLOR,
   trackHeight,
   ...props
 }: GlassSwitchProps) => {
@@ -175,8 +179,8 @@ const GlassSwitch = ({
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
     const hostStyle = getComputedStyle(controlRef.current ?? ctx.canvas);
     const trackColor =
-      hostStyle.getPropertyValue("--lgds-switch-track-bg").trim() || "rgba(148, 163, 184, 0.34)";
-    const fillColor = hostStyle.getPropertyValue("--lgds-switch-fill-bg").trim() || "#34c759";
+      hostStyle.getPropertyValue("--lgds-switch-track-bg").trim() || DEFAULT_TRACK_COLOR;
+    const fillColor = hostStyle.getPropertyValue("--lgds-switch-fill-bg").trim() || DEFAULT_FILL_COLOR;
     const sourceBackground = getCanvasBackgroundColor(controlRef.current ?? ctx.canvas);
     const trackWidth = Math.max(0, metrics.sourceWidth - trackInsetX * 2);
     const trackTop = metrics.sourceHeight / 2 - resolvedTrackHeight / 2;
@@ -384,7 +388,9 @@ const GlassSwitch = ({
           "--lgds-switch-lens-top": `${renderedLensY}px`,
           "--lgds-switch-lens-width": `${renderedLensWidth}px`,
           "--lgds-switch-color-opacity": visualRatio,
+          "--lgds-switch-fill-bg": fillColor,
           "--lgds-switch-track-height": `${resolvedTrackHeight}px`,
+          "--lgds-switch-track-bg": trackColor,
           "--lgds-switch-thumb-inset-x": `${thumbInsetX}px`,
           "--lgds-switch-track-inset-x": `${trackInsetX}px`,
           ...style

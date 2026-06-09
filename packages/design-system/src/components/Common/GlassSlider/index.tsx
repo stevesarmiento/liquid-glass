@@ -37,6 +37,8 @@ import { GLASS_SLIDER_SIZE_PRESETS } from "../sizes";
 const DEFAULT_MIN = 0;
 const DEFAULT_MAX = 100;
 const DEFAULT_STEP = 1;
+const DEFAULT_FILL_COLOR = "#1a88f8";
+const DEFAULT_TRACK_COLOR = "rgba(148, 163, 184, 0.34)";
 const DEFAULT_SLIDER_OPTICS: Omit<LensParams, "width" | "height" | "radius"> = {
   scaleX: 38,
   scaleY: 38,
@@ -143,6 +145,7 @@ const GlassSlider = ({
   defaultValue,
   disabled = false,
   engineMode = "auto",
+  fillColor = DEFAULT_FILL_COLOR,
   glassLens,
   glassSurfaceBlur = 0,
   glassTint,
@@ -163,6 +166,7 @@ const GlassSlider = ({
   sliderWidth,
   step,
   style,
+  trackColor = DEFAULT_TRACK_COLOR,
   trackHeight,
   value,
   valueFormatter,
@@ -216,8 +220,8 @@ const GlassSlider = ({
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
     const hostStyle = getComputedStyle(controlRef.current ?? ctx.canvas);
     const trackColor =
-      hostStyle.getPropertyValue("--lgds-slider-track-bg").trim() || "rgba(148, 163, 184, 0.34)";
-    const fillColor = hostStyle.getPropertyValue("--lgds-slider-fill-bg").trim() || "#1a88f8";
+      hostStyle.getPropertyValue("--lgds-slider-track-bg").trim() || DEFAULT_TRACK_COLOR;
+    const fillColor = hostStyle.getPropertyValue("--lgds-slider-fill-bg").trim() || DEFAULT_FILL_COLOR;
     const sourceBackground = getCanvasBackgroundColor(controlRef.current ?? ctx.canvas);
     const trackLeft = metrics.lensWidth / 2;
     const trackWidth = Math.max(0, metrics.sourceWidth - metrics.lensWidth);
@@ -354,7 +358,9 @@ const GlassSlider = ({
           "--lgds-slider-lens-radius": `${lens.radius}px`,
           "--lgds-slider-lens-top": `${lensGeometry.lensY}px`,
           "--lgds-slider-lens-width": `${lens.width}px`,
+          "--lgds-slider-fill-bg": fillColor,
           "--lgds-slider-track-height": `${resolvedTrackHeight}px`,
+          "--lgds-slider-track-bg": trackColor,
           ...style
         } as CSSProperties
       }

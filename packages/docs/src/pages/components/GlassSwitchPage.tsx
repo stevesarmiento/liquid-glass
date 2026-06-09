@@ -65,10 +65,26 @@ export default function GlassSwitchPage() {
       </div>
 
       <div>
+        <h2>Color</h2>
+        <PreviewContainer>
+          <GlassSwitch
+            defaultChecked
+            fillColor="#7c3aed"
+            size="md"
+            trackColor="rgba(124, 58, 237, 0.18)"
+          />
+        </PreviewContainer>
+      </div>
+
+      <div>
         <h2>Usage</h2>
         <CodeBlock>{`import { GlassSwitch } from "@liquid-glass/design-system";
 
-<GlassSwitch defaultChecked size="md" />`}</CodeBlock>
+<GlassSwitch
+  defaultChecked
+  fillColor="#1a88f8"
+  size="md"
+/>`}</CodeBlock>
       </div>
     </Stack>
   );

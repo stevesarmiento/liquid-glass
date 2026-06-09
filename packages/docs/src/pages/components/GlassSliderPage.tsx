@@ -72,12 +72,24 @@ export default function GlassSliderPage() {
       </div>
 
       <div>
+        <h2>Color</h2>
+        <PreviewContainer>
+          <GlassSlider
+            defaultValue={58}
+            fillColor="#7c3aed"
+            trackColor="rgba(124, 58, 237, 0.18)"
+          />
+        </PreviewContainer>
+      </div>
+
+      <div>
         <h2>Usage</h2>
         <CodeBlock>{`import { GlassSlider } from "@liquid-glass/design-system";
 
 <GlassSlider
   label="Exposure"
   size="md"
+  fillColor="#1a88f8"
   showValue
   value={value}
   onValueChange={setValue}
