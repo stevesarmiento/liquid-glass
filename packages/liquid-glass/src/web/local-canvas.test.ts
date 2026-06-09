@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTsLiquidGlassEngine } from "../engine/ts-engine";
 import { renderLocalGlassCanvas } from "./local-canvas";
+import { boxBlurRgba } from "./render-utils";
 
 class ImageDataMock {
   constructor(
@@ -17,7 +18,7 @@ describe("renderLocalGlassCanvas", () => {
   beforeEach(() => {
     lastImageData = null;
     vi.stubGlobal("ImageData", ImageDataMock);
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function getContextMock() {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function getContextMock(this: HTMLCanvasElement) {
       const canvas = this as HTMLCanvasElement;
       return {
         canvas,
@@ -90,5 +91,18 @@ describe("renderLocalGlassCanvas", () => {
 
     expect(lastImageData?.data[3]).toBe(0);
   });
-});
 
+  it("can blur pixels without relying on canvas context filters", () => {
+    const data = new Uint8ClampedArray([
+      0, 0, 0, 255,
+      255, 255, 255, 255,
+      0, 0, 0, 255,
+    ]);
+
+    boxBlurRgba(data, 3, 1, 1);
+
+    expect(data[0]).toBeGreaterThan(0);
+    expect(data[4]).toBeLessThan(255);
+    expect(data[8]).toBeGreaterThan(0);
+  });
+});

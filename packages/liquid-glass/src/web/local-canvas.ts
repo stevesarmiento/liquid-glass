@@ -3,6 +3,7 @@ import { createLiquidGlassEngine } from "../engine/create-engine";
 import type { LensParams, LiquidGlassEngine } from "../engine/types";
 import {
   CANVAS_STRENGTH,
+  applyCanvasBlur,
   resizeCanvas,
   roundedRectInside,
   sampleGlassChannel,
@@ -93,10 +94,8 @@ export function renderLocalGlassCanvas(input: LocalGlassCanvasRenderInput): Loca
   sourceCtx.restore();
 
   blurredCtx.clearRect(0, 0, sourceWidth, sourceHeight);
-  blurredCtx.save();
-  blurredCtx.filter = lens.blur > 0 ? `blur(${lens.blur}px)` : "none";
   blurredCtx.drawImage(sourceCanvas, 0, 0);
-  blurredCtx.restore();
+  applyCanvasBlur(blurredCtx, sourceWidth, sourceHeight, lens.blur, pixelRatio);
 
   const mapStarted = performance.now();
   const map = engine.generateDisplacementMap(lens);
@@ -155,4 +154,3 @@ export function renderLocalGlassCanvas(input: LocalGlassCanvasRenderInput): Loca
     pixelRatio,
   };
 }
-

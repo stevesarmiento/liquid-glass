@@ -306,9 +306,7 @@ const GlassSlider = ({
     inputRef.current?.focus({ preventScroll: true });
     setIsDragging(true);
     updateValueFromPointer(event.clientX);
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
+    safeSetPointerCapture(event.currentTarget, event.pointerId);
     onPointerDown?.(event as never);
   };
 
@@ -321,14 +319,13 @@ const GlassSlider = ({
 
   const handlePointerUp: PointerEventHandler<HTMLSpanElement> = (event) => {
     setIsDragging(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    safeReleasePointerCapture(event.currentTarget, event.pointerId);
     onPointerUp?.(event as never);
   };
 
   const handlePointerCancel: PointerEventHandler<HTMLSpanElement> = (event) => {
     setIsDragging(false);
+    safeReleasePointerCapture(event.currentTarget, event.pointerId);
     onPointerCancel?.(event as never);
   };
 
@@ -433,3 +430,33 @@ const GlassSlider = ({
 GlassSlider.displayName = "GlassSlider";
 
 export default GlassSlider;
+
+function safeSetPointerCapture(element: Element, pointerId: number): void {
+  if (!("setPointerCapture" in element)) return;
+  try {
+    const pointerElement = element as Element & {
+      hasPointerCapture(pointerId: number): boolean;
+      setPointerCapture(pointerId: number): void;
+    };
+    if (!pointerElement.hasPointerCapture(pointerId)) {
+      pointerElement.setPointerCapture(pointerId);
+    }
+  } catch {
+    // Pointer capture may be unavailable in embedded browsers or interrupted synthetic drags.
+  }
+}
+
+function safeReleasePointerCapture(element: Element, pointerId: number): void {
+  if (!("releasePointerCapture" in element) || !("hasPointerCapture" in element)) return;
+  try {
+    const pointerElement = element as Element & {
+      hasPointerCapture(pointerId: number): boolean;
+      releasePointerCapture(pointerId: number): void;
+    };
+    if (pointerElement.hasPointerCapture(pointerId)) {
+      pointerElement.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // Ignore stale pointer captures after canceled or browser-interrupted drags.
+  }
+}

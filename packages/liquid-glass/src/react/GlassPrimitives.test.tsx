@@ -16,7 +16,7 @@ class ImageDataMock {
 function installCanvasMocks() {
   vi.stubGlobal("ImageData", ImageDataMock);
   vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,test");
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function getContextMock() {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function getContextMock(this: HTMLCanvasElement) {
     const canvas = this as HTMLCanvasElement;
     return {
       canvas,

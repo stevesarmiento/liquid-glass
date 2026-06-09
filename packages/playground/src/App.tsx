@@ -305,11 +305,11 @@ export default function App() {
         ref={containerRef}
         className="stage"
         onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture(event.pointerId);
+          safeSetPointerCapture(event.currentTarget, event.pointerId);
           handlePointer(event);
         }}
         onPointerMove={(event) => {
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) handlePointer(event);
+          if (safeHasPointerCapture(event.currentTarget, event.pointerId)) handlePointer(event);
         }}
       >
         <div
@@ -708,6 +708,24 @@ function constrainControlsPosition(position: FloatingControlsPosition): Floating
     x: Math.min(maxX, Math.max(FLOATING_CONTROLS_MARGIN, position.x)),
     y: Math.min(maxY, Math.max(FLOATING_CONTROLS_MARGIN, position.y)),
   };
+}
+
+function safeSetPointerCapture(element: Element, pointerId: number): void {
+  if (!("setPointerCapture" in element)) return;
+  try {
+    (element as Element & { setPointerCapture(pointerId: number): void }).setPointerCapture(pointerId);
+  } catch {
+    // Some embedded browsers can reject capture during synthetic or interrupted drags.
+  }
+}
+
+function safeHasPointerCapture(element: Element, pointerId: number): boolean {
+  if (!("hasPointerCapture" in element)) return true;
+  try {
+    return (element as Element & { hasPointerCapture(pointerId: number): boolean }).hasPointerCapture(pointerId);
+  } catch {
+    return false;
+  }
 }
 
 const styles = `

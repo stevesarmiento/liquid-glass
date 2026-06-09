@@ -304,9 +304,7 @@ const GlassSwitch = ({
     setIsPressed(true);
     setDragRatio(null);
 
-    if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    }
+    safeSetPointerCapture(event.currentTarget, event.pointerId);
 
     onPointerDown?.(event as never);
   };
@@ -341,9 +339,7 @@ const GlassSwitch = ({
 
     holdActiveState();
 
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    safeReleasePointerCapture(event.currentTarget, event.pointerId);
 
     onPointerUp?.(event as never);
   };
@@ -353,6 +349,7 @@ const GlassSwitch = ({
     suppressClickRef.current = false;
     setIsPressed(false);
     setDragRatio(null);
+    safeReleasePointerCapture(event.currentTarget, event.pointerId);
     onPointerCancel?.(event as never);
   };
 
@@ -471,3 +468,33 @@ const GlassSwitch = ({
 GlassSwitch.displayName = "GlassSwitch";
 
 export default GlassSwitch;
+
+function safeSetPointerCapture(element: Element, pointerId: number): void {
+  if (!("setPointerCapture" in element)) return;
+  try {
+    const pointerElement = element as Element & {
+      hasPointerCapture(pointerId: number): boolean;
+      setPointerCapture(pointerId: number): void;
+    };
+    if (!pointerElement.hasPointerCapture(pointerId)) {
+      pointerElement.setPointerCapture(pointerId);
+    }
+  } catch {
+    // Pointer capture can throw in embedded browsers or interrupted synthetic drags.
+  }
+}
+
+function safeReleasePointerCapture(element: Element, pointerId: number): void {
+  if (!("releasePointerCapture" in element) || !("hasPointerCapture" in element)) return;
+  try {
+    const pointerElement = element as Element & {
+      hasPointerCapture(pointerId: number): boolean;
+      releasePointerCapture(pointerId: number): void;
+    };
+    if (pointerElement.hasPointerCapture(pointerId)) {
+      pointerElement.releasePointerCapture(pointerId);
+    }
+  } catch {
+    // Ignore stale pointer captures after canceled or browser-interrupted drags.
+  }
+}

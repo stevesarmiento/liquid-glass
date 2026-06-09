@@ -13,6 +13,7 @@ import { setAttr, setHref, setStyle } from "./dom";
 import { displacementMapToPngDataUrl } from "./png";
 import {
   CANVAS_STRENGTH,
+  applyCanvasBlur,
   resizeCanvas,
   roundedRectInside,
   sampleGlassChannel,
@@ -293,6 +294,7 @@ function createCanvasRenderer() {
   const ctx = canvas.getContext("2d", { alpha: true, willReadFrequently: true });
   const sceneCanvas = document.createElement("canvas");
   const sceneCtx = sceneCanvas.getContext("2d", { alpha: false, willReadFrequently: true });
+  let sceneCache: { key: string; pixels: ImageData } | null = null;
 
   canvas.style.position = "absolute";
   canvas.style.inset = "0";
@@ -315,12 +317,16 @@ function createCanvasRenderer() {
       resizeCanvas(sceneCanvas, width, height);
       ctx.clearRect(0, 0, width, height);
       const blur = input.lens.blur;
-      sceneCtx.save();
-      sceneCtx.filter = blur > 0 ? `blur(${blur}px)` : "none";
-      drawCoverImage(sceneCtx, input.image, width, height, blur);
-      sceneCtx.restore();
-
-      const scenePixels = sceneCtx.getImageData(0, 0, width, height);
+      const cacheKey = getCanvasSceneCacheKey(input.image, width, height, blur);
+      if (sceneCache?.key !== cacheKey) {
+        drawCoverImage(sceneCtx, input.image, width, height, blur);
+        applyCanvasBlur(sceneCtx, width, height, blur);
+        sceneCache = {
+          key: cacheKey,
+          pixels: sceneCtx.getImageData(0, 0, width, height),
+        };
+      }
+      const scenePixels = sceneCache.pixels;
       const lensW = Math.max(1, Math.round(input.geometry.width));
       const lensH = Math.max(1, Math.round(input.geometry.height));
       const left = Math.round(input.geometry.left);
@@ -387,4 +393,20 @@ function drawCoverImage(
   const drawH = image.naturalHeight * scale;
   ctx.clearRect(0, 0, width, height);
   ctx.drawImage(image, (width - drawW) / 2, (height - drawH) / 2, drawW, drawH);
+}
+
+function getCanvasSceneCacheKey(
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+  blur: number,
+): string {
+  return [
+    image.currentSrc || image.src,
+    image.naturalWidth,
+    image.naturalHeight,
+    width,
+    height,
+    Math.round(blur * 100),
+  ].join("|");
 }

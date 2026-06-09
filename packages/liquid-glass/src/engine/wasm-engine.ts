@@ -37,7 +37,7 @@ type WatchedCompute = LiquidGlassEngine["computeLensGeometry"];
 
 async function loadWasmModule(): Promise<WasmModule> {
   const errors: unknown[] = [];
-  for (const modulePath of ["../wasm/liquid_glass_core.js", "../../wasm/liquid_glass_core.js"]) {
+  for (const modulePath of ["../../wasm/liquid_glass_core.js", "../wasm/liquid_glass_core.js"]) {
     try {
       const module = (await import(/* @vite-ignore */ modulePath)) as WasmModule;
       await module.default();

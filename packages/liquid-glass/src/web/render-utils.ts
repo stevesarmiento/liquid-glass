@@ -25,6 +25,90 @@ export function resizeCanvas(canvas: HTMLCanvasElement, width: number, height: n
   }
 }
 
+export function applyCanvasBlur(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  blur: number,
+  pixelRatio = 1,
+): void {
+  const radius = Math.round(Math.max(0, blur) * Math.max(1, pixelRatio));
+  if (radius <= 0 || width <= 0 || height <= 0) return;
+
+  const imageData = ctx.getImageData(0, 0, width, height);
+  boxBlurRgba(imageData.data, width, height, radius);
+  ctx.putImageData(imageData, 0, 0);
+}
+
+export function boxBlurRgba(data: Uint8ClampedArray, width: number, height: number, radius: number): void {
+  const r = Math.max(0, Math.floor(radius));
+  if (r <= 0 || width <= 0 || height <= 0) return;
+
+  const tmp = new Uint8ClampedArray(data.length);
+  const windowSize = r * 2 + 1;
+
+  for (let y = 0; y < height; y += 1) {
+    const row = y * width;
+    const sums = [0, 0, 0, 0];
+
+    for (let offset = -r; offset <= r; offset += 1) {
+      const x = Math.max(0, Math.min(width - 1, offset));
+      const index = (row + x) * 4;
+      sums[0] += data[index];
+      sums[1] += data[index + 1];
+      sums[2] += data[index + 2];
+      sums[3] += data[index + 3];
+    }
+
+    for (let x = 0; x < width; x += 1) {
+      const index = (row + x) * 4;
+      tmp[index] = Math.round(sums[0] / windowSize);
+      tmp[index + 1] = Math.round(sums[1] / windowSize);
+      tmp[index + 2] = Math.round(sums[2] / windowSize);
+      tmp[index + 3] = Math.round(sums[3] / windowSize);
+
+      const removeX = Math.max(0, Math.min(width - 1, x - r));
+      const addX = Math.max(0, Math.min(width - 1, x + r + 1));
+      const removeIndex = (row + removeX) * 4;
+      const addIndex = (row + addX) * 4;
+      sums[0] += data[addIndex] - data[removeIndex];
+      sums[1] += data[addIndex + 1] - data[removeIndex + 1];
+      sums[2] += data[addIndex + 2] - data[removeIndex + 2];
+      sums[3] += data[addIndex + 3] - data[removeIndex + 3];
+    }
+  }
+
+  for (let x = 0; x < width; x += 1) {
+    const sums = [0, 0, 0, 0];
+
+    for (let offset = -r; offset <= r; offset += 1) {
+      const y = Math.max(0, Math.min(height - 1, offset));
+      const index = (y * width + x) * 4;
+      sums[0] += tmp[index];
+      sums[1] += tmp[index + 1];
+      sums[2] += tmp[index + 2];
+      sums[3] += tmp[index + 3];
+    }
+
+    for (let y = 0; y < height; y += 1) {
+      const index = (y * width + x) * 4;
+      data[index] = Math.round(sums[0] / windowSize);
+      data[index + 1] = Math.round(sums[1] / windowSize);
+      data[index + 2] = Math.round(sums[2] / windowSize);
+      data[index + 3] = Math.round(sums[3] / windowSize);
+
+      const removeY = Math.max(0, Math.min(height - 1, y - r));
+      const addY = Math.max(0, Math.min(height - 1, y + r + 1));
+      const removeIndex = (removeY * width + x) * 4;
+      const addIndex = (addY * width + x) * 4;
+      sums[0] += tmp[addIndex] - tmp[removeIndex];
+      sums[1] += tmp[addIndex + 1] - tmp[removeIndex + 1];
+      sums[2] += tmp[addIndex + 2] - tmp[removeIndex + 2];
+      sums[3] += tmp[addIndex + 3] - tmp[removeIndex + 3];
+    }
+  }
+}
+
 export function roundedRectInside(
   x: number,
   y: number,
@@ -109,4 +193,3 @@ export function specularAlpha(map: DisplacementMap, localX: number, localY: numb
 
   return Math.min(0.52, spec * 0.52);
 }
-
