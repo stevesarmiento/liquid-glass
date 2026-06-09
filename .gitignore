@@ -1,0 +1,8 @@
+node_modules/
+artifacts/
+.DS_Store
+target/
+.turbo/
+dist/
+packages/*/dist/
+packages/liquid-glass/wasm/

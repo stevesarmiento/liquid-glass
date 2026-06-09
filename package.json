@@ -1,0 +1,29 @@
+{
+  "name": "liquid-glass-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.6",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "cargo test && turbo test",
+    "test:wasm": "cd packages/liquid-glass && bun run test:wasm",
+    "build:wasm": "cd packages/liquid-glass && bun run build:wasm",
+    "playground": "cd packages/playground && bun run dev",
+    "download": "node scripts/download.mjs",
+    "extract:sourcemaps": "node scripts/extract-sourcemaps.mjs",
+    "prototype": "node scripts/serve-prototype.mjs",
+    "prettify": "node scripts/prettify.mjs",
+    "search": "node scripts/search.mjs",
+    "summarize": "node scripts/summarize.mjs"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  }
+}

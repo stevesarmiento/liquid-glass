@@ -1,0 +1,25 @@
+{
+  "name": "liquid-glass-playground",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.5.2",
+    "liquid-glass": "workspace:*",
+    "vite": "^6.3.5",
+    "typescript": "^5.8.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@types/node": "^24.0.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aave Glass Prototype</title>
+    <link rel="stylesheet" href="/prototype/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace" aria-label="Aave Glass prototype">
+        <div class="stage-wrap">
+          <div class="glass-stage" id="glassStage" data-aave-glass-container>
+            <div class="content-layer" id="sourceLayer">
+              <div class="photo-band" aria-hidden="true"></div>
+              <div class="dashboard-grid">
+                <article class="hero-panel" data-glass-target>
+                  <div class="hero-copy">
+                    <span class="eyebrow">AAVE V3</span>
+                    <h1>Liquidity Risk</h1>
+                    <p>
+                      Live market surfaces, account health, and protocol flow
+                      rendered as ordinary DOM under a refractive lens.
+                    </p>
+                  </div>
+                  <div class="metric-stack">
+                    <div>
+                      <span>Net deposits</span>
+                      <strong>$14.82B</strong>
+                    </div>
+                    <div>
+                      <span>Utilization</span>
+                      <strong>68.4%</strong>
+                    </div>
+                  </div>
+                </article>
+
+                <article class="chart-panel" data-glass-target>
+                  <div class="panel-title">
+                    <span>Reserve Flow</span>
+                    <strong>24h</strong>
+                  </div>
+                  <div class="bars" aria-hidden="true">
+                    <span style="--h: 42%"></span>
+                    <span style="--h: 62%"></span>
+                    <span style="--h: 48%"></span>
+                    <span style="--h: 76%"></span>
+                    <span style="--h: 54%"></span>
+                    <span style="--h: 88%"></span>
+                    <span style="--h: 66%"></span>
+                    <span style="--h: 72%"></span>
+                  </div>
+                </article>
+
+                <article class="table-panel" data-glass-target>
+                  <div class="panel-title">
+                    <span>Assets</span>
+                    <strong>Risk</strong>
+                  </div>
+                  <div class="asset-row">
+                    <span>WETH</span>
+                    <b>Stable</b>
+                    <em>82.4%</em>
+                  </div>
+                  <div class="asset-row">
+                    <span>USDC</span>
+                    <b>Low</b>
+                    <em>51.8%</em>
+                  </div>
+                  <div class="asset-row">
+                    <span>wstETH</span>
+                    <b>Medium</b>
+                    <em>74.1%</em>
+                  </div>
+                </article>
+
+                <article
+                  class="code-panel"
+                  data-glass-target
+                  data-refraction-target
+                >
+                  <pre><code>const lens = generateMap({
+  width: 180,
+  height: 112,
+  depth: 9,
+  chroma: 0.38,
+  edgeFalloff: true
+});</code></pre>
+                </article>
+              </div>
+            </div>
+
+            <div class="target-layer" id="targetLayer" aria-hidden="true">
+              <div class="target-viewport" id="targetViewport">
+                <div class="target-content" id="targetContent"></div>
+              </div>
+            </div>
+
+            <canvas
+              class="refract-canvas"
+              id="refractCanvas"
+              aria-hidden="true"
+            ></canvas>
+            <div class="frost-layer" id="frostLayer" aria-hidden="true"></div>
+            <div class="lens-outline" id="lensOutline" aria-hidden="true"></div>
+
+            <svg class="filter-svg" aria-hidden="true">
+              <defs>
+                <filter
+                  id="glass-filter"
+                  x="0"
+                  y="0"
+                  width="100%"
+                  height="100%"
+                  filterUnits="userSpaceOnUse"
+                  primitiveUnits="userSpaceOnUse"
+                  color-interpolation-filters="sRGB"
+                >
+                  <feFlood
+                    flood-color="rgb(128,128,128)"
+                    flood-opacity="1"
+                    result="mapBg"
+                  />
+                  <feImage
+                    id="mapImage"
+                    href=""
+                    x="0"
+                    y="0"
+                    width="1"
+                    height="1"
+                    preserveAspectRatio="none"
+                    result="rawMap"
+                  />
+                  <feComposite
+                    in="rawMap"
+                    in2="mapBg"
+                    operator="over"
+                    result="map"
+                  />
+                  <feColorMatrix
+                    id="mapMatrix"
+                    in="map"
+                    type="matrix"
+                    values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"
+                    result="scaledMap"
+                  />
+                  <feGaussianBlur
+                    id="sourceBlur"
+                    in="SourceGraphic"
+                    stdDeviation="0"
+                    result="blurred"
+                  />
+                  <feDisplacementMap
+                    class="disp disp-r"
+                    in="blurred"
+                    in2="scaledMap"
+                    scale="0"
+                    xChannelSelector="R"
+                    yChannelSelector="G"
+                  />
+                  <feColorMatrix
+                    type="matrix"
+                    values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                    result="dispR"
+                  />
+                  <feDisplacementMap
+                    class="disp disp-g"
+                    in="blurred"
+                    in2="scaledMap"
+                    scale="0"
+                    xChannelSelector="R"
+                    yChannelSelector="G"
+                  />
+                  <feColorMatrix
+                    type="matrix"
+                    values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                    result="dispG"
+                  />
+                  <feDisplacementMap
+                    class="disp disp-b"
+                    in="blurred"
+                    in2="scaledMap"
+                    scale="0"
+                    xChannelSelector="R"
+                    yChannelSelector="G"
+                  />
+                  <feColorMatrix
+                    type="matrix"
+                    values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
+                    result="dispB"
+                  />
+                  <feComposite
+                    in="dispR"
+                    in2="dispG"
+                    operator="arithmetic"
+                    k1="0"
+                    k2="1"
+                    k3="1"
+                    k4="0"
+                    result="rg"
+                  />
+                  <feComposite
+                    in="rg"
+                    in2="dispB"
+                    operator="arithmetic"
+                    k1="0"
+                    k2="1"
+                    k3="1"
+                    k4="0"
+                    result="lensResult"
+                  />
+                  <feFlood
+                    id="lensMask"
+                    flood-color="black"
+                    flood-opacity="1"
+                    x="0"
+                    y="0"
+                    width="1"
+                    height="1"
+                    result="lensMask"
+                  />
+                  <feComposite
+                    in="lensResult"
+                    in2="lensMask"
+                    operator="in"
+                    result="maskedLens"
+                  />
+                  <feComposite
+                    in="SourceGraphic"
+                    in2="lensMask"
+                    operator="out"
+                    result="holedSource"
+                  />
+                  <feColorMatrix
+                    id="specMatrix"
+                    in="map"
+                    type="matrix"
+                    values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0 0"
+                    result="specMask"
+                  />
+                  <feComposite
+                    in="specMask"
+                    in2="lensMask"
+                    operator="in"
+                    result="maskedSpec"
+                  />
+                  <feComposite
+                    in="maskedLens"
+                    in2="holedSource"
+                    operator="over"
+                    result="withLens"
+                  />
+                  <feComposite in="maskedSpec" in2="withLens" operator="over" />
+                </filter>
+                <filter
+                  id="glass-filter-target"
+                  x="0"
+                  y="0"
+                  width="100%"
+                  height="100%"
+                  filterUnits="userSpaceOnUse"
+                  primitiveUnits="userSpaceOnUse"
+                  color-interpolation-filters="sRGB"
+                >
+                  <feFlood
+                    flood-color="rgb(128,128,128)"
+                    flood-opacity="1"
+                    result="targetMapBg"
+                  />
+                  <feImage
+                    id="targetMapImage"
+                    href=""
+                    x="0"
+                    y="0"
+                    width="1"
+                    height="1"
+                    preserveAspectRatio="none"
+                    result="targetRawMap"
+                  />
+                  <feComposite
+                    in="targetRawMap"
+                    in2="targetMapBg"
+                    operator="over"
+                    result="targetMap"
+                  />
+                  <feColorMatrix
+                    id="targetMapMatrix"
+                    in="targetMap"
+                    type="matrix"
+                    values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"
+                    result="targetScaledMap"
+                  />
+                  <feGaussianBlur
+                    id="targetSourceBlur"
+                    in="SourceGraphic"
+                    stdDeviation="0"
+                    result="targetBlurred"
+                  />
+                  <feDisplacementMap
+                    class="target-disp target-disp-r"
+                    in="targetBlurred"
+                    in2="targetScaledMap"
+                    scale="0"
+                    xChannelSelector="R"
+                    yChannelSelector="G"
+                  />
+                  <feColorMatrix
+                    type="matrix"
+                    values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                    result="targetDispR"
+                  />
+                  <feDisplacementMap
+                    class="target-disp target-disp-g"
+                    in="targetBlurred"
+                    in2="targetScaledMap"
+                    scale="0"
+                    xChannelSelector="R"
+                    yChannelSelector="G"
+                  />
+                  <feColorMatrix
+                    type="matrix"
+                    values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"
+                    result="targetDispG"
+                  />
+                  <feDisplacementMap
+                    class="target-disp target-disp-b"
+                    in="targetBlurred"
+                    in2="targetScaledMap"
+                    scale="0"
+                    xChannelSelector="R"
+                    yChannelSelector="G"
+                  />
+                  <feColorMatrix
+                    type="matrix"
+                    values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
+                    result="targetDispB"
+                  />
+                  <feComposite
+                    in="targetDispR"
+                    in2="targetDispG"
+                    operator="arithmetic"
+                    k1="0"
+                    k2="1"
+                    k3="1"
+                    k4="0"
+                    result="targetRg"
+                  />
+                  <feComposite
+                    in="targetRg"
+                    in2="targetDispB"
+                    operator="arithmetic"
+                    k1="0"
+                    k2="1"
+                    k3="1"
+                    k4="0"
+                    result="targetLensResult"
+                  />
+                  <feFlood
+                    id="targetLensMask"
+                    flood-color="black"
+                    flood-opacity="1"
+                    x="0"
+                    y="0"
+                    width="1"
+                    height="1"
+                    result="targetLensMask"
+                  />
+                  <feComposite
+                    in="targetLensResult"
+                    in2="targetLensMask"
+                    operator="in"
+                    result="targetMaskedLens"
+                  />
+                  <feColorMatrix
+                    id="targetSpecMatrix"
+                    in="targetMap"
+                    type="matrix"
+                    values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0 0"
+                    result="targetSpecMask"
+                  />
+                  <feComposite
+                    in="targetSpecMask"
+                    in2="targetLensMask"
+                    operator="in"
+                    result="targetMaskedSpec"
+                  />
+                  <feComposite
+                    in="targetMaskedSpec"
+                    in2="targetMaskedLens"
+                    operator="over"
+                  />
+                </filter>
+                <filter
+                  id="glass-filter-fast"
+                  x="0"
+                  y="0"
+                  width="100%"
+                  height="100%"
+                  filterUnits="userSpaceOnUse"
+                  primitiveUnits="userSpaceOnUse"
+                  color-interpolation-filters="sRGB"
+                >
+                  <feFlood
+                    flood-color="rgb(128,128,128)"
+                    flood-opacity="1"
+                    result="fastMapBg"
+                  />
+                  <feImage
+                    id="fastMapImage"
+                    href=""
+                    x="0"
+                    y="0"
+                    width="1"
+                    height="1"
+                    preserveAspectRatio="none"
+                    result="fastRawMap"
+                  />
+                  <feComposite
+                    in="fastRawMap"
+                    in2="fastMapBg"
+                    operator="over"
+                    result="fastMap"
+                  />
+                  <feColorMatrix
+                    id="fastMapMatrix"
+                    in="fastMap"
+                    type="matrix"
+                    values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"
+                    result="fastScaledMap"
+                  />
+                  <feDisplacementMap
+                    id="fastDisp"
+                    in="SourceGraphic"
+                    in2="fastScaledMap"
+                    scale="0"
+                    xChannelSelector="R"
+                    yChannelSelector="G"
+                    result="fastLensResult"
+                  />
+                  <feFlood
+                    id="fastLensMask"
+                    flood-color="black"
+                    flood-opacity="1"
+                    x="0"
+                    y="0"
+                    width="1"
+                    height="1"
+                    result="fastLensMask"
+                  />
+                  <feComposite
+                    in="SourceGraphic"
+                    in2="fastLensMask"
+                    operator="out"
+                    result="fastHoledSource"
+                  />
+                  <feComposite
+                    in="fastLensResult"
+                    in2="fastHoledSource"
+                    operator="over"
+                  />
+                </filter>
+              </defs>
+            </svg>
+          </div>
+        </div>
+
+        <aside class="controls" aria-label="Glass controls">
+          <div class="control-header">
+            <strong>Aave Glass DOM/SVG</strong>
+            <span id="stats">map 256 px</span>
+          </div>
+
+          <label class="toggle-row">
+            <input id="targetMode" type="checkbox" checked />
+            <span>Fast viewport</span>
+          </label>
+          <label class="toggle-row">
+            <input id="safariRefresh" type="checkbox" checked />
+            <span>Safari ID refresh</span>
+          </label>
+          <label class="toggle-row">
+            <input id="fullDragFilter" type="checkbox" checked />
+            <span>Full quality while dragging</span>
+          </label>
+          <label class="toggle-row">
+            <input id="dragFrost" type="checkbox" checked />
+            <span>Drag frost</span>
+          </label>
+          <label class="toggle-row">
+            <input id="debugLogs" type="checkbox" />
+            <span>Console perf logs</span>
+          </label>
+
+          <pre class="perf-panel" id="perfReadout">waiting for frame</pre>
+
+          <div class="control-grid">
+            <label>
+              <span>Width</span>
+              <input id="lensW" type="range" min="80" max="280" value="180" />
+            </label>
+            <label>
+              <span>Height</span>
+              <input id="lensH" type="range" min="60" max="180" value="112" />
+            </label>
+            <label>
+              <span>Radius</span>
+              <input id="radius" type="range" min="0" max="80" value="38" />
+            </label>
+            <label>
+              <span>Scale X</span>
+              <input id="scaleX" type="range" min="0" max="90" value="44" />
+            </label>
+            <label>
+              <span>Scale Y</span>
+              <input id="scaleY" type="range" min="0" max="90" value="38" />
+            </label>
+            <label>
+              <span>Chroma</span>
+              <input
+                id="chroma"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="0.38"
+              />
+            </label>
+            <label>
+              <span>Depth</span>
+              <input
+                id="depth"
+                type="range"
+                min="0"
+                max="32"
+                step="0.5"
+                value="9"
+              />
+            </label>
+            <label>
+              <span>Dome</span>
+              <input
+                id="dome"
+                type="range"
+                min="0"
+                max="70"
+                step="1"
+                value="24"
+              />
+            </label>
+            <label>
+              <span>Splay</span>
+              <input
+                id="splay"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="0.58"
+              />
+            </label>
+            <label>
+              <span>Glow</span>
+              <input
+                id="glow"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="0.32"
+              />
+            </label>
+            <label>
+              <span>Edge</span>
+              <input
+                id="edge"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value="0.42"
+              />
+            </label>
+            <label>
+              <span>Blur</span>
+              <input
+                id="blur"
+                type="range"
+                min="0"
+                max="12"
+                step="0.1"
+                value="2.4"
+              />
+            </label>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="/prototype/app.js"></script>
+  </body>
+</html>
