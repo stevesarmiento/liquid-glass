@@ -11,6 +11,12 @@ export interface GlassComponentTokens {
   textMuted: string;
   /** Text color used on the glass modal surface. */
   modalText: string;
+  /** Resting translucent surface color for the glass button face. */
+  buttonSurface: string;
+  /** Resting border color for the glass button face. */
+  buttonBorder: string;
+  /** Label color on the glass button — white on glass by default. */
+  buttonText: string;
 }
 
 const componentTokens: GlassComponentTokens = {
@@ -18,7 +24,10 @@ const componentTokens: GlassComponentTokens = {
   track: "rgba(148, 163, 184, 0.34)",
   text: colors.black,
   textMuted: "rgba(43, 47, 67, 0.58)",
-  modalText: "#111827"
+  modalText: "#111827",
+  buttonSurface: "rgba(255, 255, 255, 0.62)",
+  buttonBorder: "rgba(148, 163, 184, 0.32)",
+  buttonText: "#ffffff"
 };
 
 const defaultTheme = {

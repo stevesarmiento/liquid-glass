@@ -1,5 +1,5 @@
 import { type ComponentProps, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { GlassModal, GlassSlider, GlassSwitch, type GlassComponentSize } from "@liquid-glass/design-system";
+import { GlassButton, GlassModal, GlassSlider, GlassSwitch, type GlassComponentSize } from "@liquid-glass/design-system";
 
 import {
   DEFAULT_LENS_PARAMS,
@@ -90,6 +90,8 @@ type FloatingControlsDrag = {
   originX: number;
   originY: number;
 };
+type VisibilityKey = "glass" | "slider" | "switch" | "button" | "modal";
+type ComponentVisibility = Record<VisibilityKey, boolean>;
 
 const FLOATING_CONTROLS_WIDTH = 326;
 const FLOATING_CONTROLS_MARGIN = 16;
@@ -100,14 +102,28 @@ type SwitchPreviewStackProps = Pick<
   "engineMode" | "glassLens" | "glassSurfaceBlur" | "glassTint" | "renderer"
 >;
 
-const INITIAL_LENS_POSITION = { x: 0.61, y: 0.36 };
+const INITIAL_LENS_POSITION = { x: 0.5, y: 0.5 };
 const INITIAL_LENS_POSITIONS = [
-  { x: 0.42, y: 0.42 },
-  { x: 0.66, y: 0.5 },
+  { x: 0.44, y: 0.5 },
+  { x: 0.56, y: 0.5 },
 ];
 const INITIAL_BLEND = 48;
 /** How often controller stats may trigger a React re-render. */
 const STATS_FLUSH_MS = 250;
+const INITIAL_VISIBILITY: ComponentVisibility = {
+  glass: true,
+  slider: false,
+  switch: false,
+  button: false,
+  modal: false,
+};
+const VISIBILITY_OPTIONS: Array<{ key: VisibilityKey; label: string }> = [
+  { key: "glass", label: "Draggable" },
+  { key: "slider", label: "Slider" },
+  { key: "switch", label: "Switch" },
+  { key: "button", label: "Button" },
+  { key: "modal", label: "Modal" },
+];
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -129,7 +145,7 @@ export default function App() {
   const [lens, setLens] = useState<ResolvedLensParams>(INITIAL_LENS);
   const [position, setPosition] = useState(INITIAL_LENS_POSITION);
   const [positions, setPositions] = useState(INITIAL_LENS_POSITIONS.map((p) => ({ ...p })));
-  const [dualLens, setDualLens] = useState(true);
+  const [dualLens, setDualLens] = useState(false);
   const [blend, setBlend] = useState(INITIAL_BLEND);
   const [engineMode, setEngineMode] = useState<LiquidGlassEngineMode>("auto");
   const [tintMode, setTintMode] = useState<TintMode>("custom");
@@ -143,9 +159,11 @@ export default function App() {
   const [controlsOpen, setControlsOpen] = useState(true);
   const [controlsPosition, setControlsPosition] = useState<FloatingControlsPosition>(controlsPositionRef.current);
   const [isControlsDragging, setIsControlsDragging] = useState(false);
+  const [visibility, setVisibility] = useState<ComponentVisibility>(INITIAL_VISIBILITY);
   const engine = useMemo(() => createLiquidGlassEngine({ mode: engineMode }), [engineMode]);
   const glassTint = tintMode === "preset" ? tintName : customTint;
   const tint = tintMode === "preset" ? resolveGlassTint(tintName) : createGlassTint(customTint);
+  const visiblePreviewCount = Number(visibility.slider) + Number(visibility.switch) + Number(visibility.button) + Number(visibility.modal);
   const sliderLens = useMemo(
     () => ({
       width: 63,
@@ -159,6 +177,10 @@ export default function App() {
       splay: lens.splay,
       glow: lens.glow,
       edge: lens.edge,
+      glowSpread: lens.glowSpread,
+      glowExponent: lens.glowExponent,
+      edgeExponent: lens.edgeExponent,
+      specularRotation: lens.specularRotation,
       blur: Math.min(lens.blur, 3),
       mapSize: lens.mapSize,
     }),
@@ -174,6 +196,29 @@ export default function App() {
       splay: lens.splay,
       glow: lens.glow,
       edge: lens.edge,
+      glowSpread: lens.glowSpread,
+      glowExponent: lens.glowExponent,
+      edgeExponent: lens.edgeExponent,
+      specularRotation: lens.specularRotation,
+      blur: Math.min(lens.blur, 3),
+      mapSize: lens.mapSize,
+    }),
+    [lens],
+  );
+  const buttonLens = useMemo<Partial<LensParams>>(
+    () => ({
+      scaleX: lens.scaleX,
+      scaleY: lens.scaleY,
+      chroma: lens.chroma,
+      depth: Math.min(lens.depth, 12),
+      dome: Math.min(lens.dome, 80),
+      splay: lens.splay,
+      glow: lens.glow,
+      edge: lens.edge,
+      glowSpread: lens.glowSpread,
+      glowExponent: lens.glowExponent,
+      edgeExponent: lens.edgeExponent,
+      specularRotation: lens.specularRotation,
       blur: Math.min(lens.blur, 3),
       mapSize: lens.mapSize,
     }),
@@ -190,6 +235,10 @@ export default function App() {
       splay: lens.splay,
       glow: lens.glow,
       edge: lens.edge,
+      glowSpread: lens.glowSpread,
+      glowExponent: lens.glowExponent,
+      edgeExponent: lens.edgeExponent,
+      specularRotation: lens.specularRotation,
       blur: lens.blur,
       mapSize: lens.mapSize,
     }),
@@ -339,6 +388,13 @@ export default function App() {
     }));
   }
 
+  function updateVisibility(key: VisibilityKey, value: boolean) {
+    setVisibility((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
   function handlePointer(event: PointerEvent<HTMLElement>, isDown = false) {
     const rect = event.currentTarget.getBoundingClientRect();
     const next = {
@@ -459,7 +515,7 @@ export default function App() {
         />
         <div
           ref={targetRef}
-          className="paintingLayer glassTarget"
+          className={`paintingLayer glassTarget ${visibility.glass ? "" : "glassTargetHidden"}`}
           style={{ backgroundImage: `url(${PAINTING_URL})` }}
         />
         {/* In dual-lens (merged) mode the WebGL/canvas shader draws the
@@ -469,7 +525,7 @@ export default function App() {
             visually close but not pixel-exact to this CSS (the highlight is
             an angular rim lobe rather than a blurred radial gradient);
             single-lens mode keeps the CSS chrome untouched. */}
-        {(dualLens ? [] : [0]).map((index) => {
+        {(visibility.glass && !dualLens ? [0] : []).map((index) => {
           const chromePosition = dualLens ? positions[index] : position;
           return (
             <div
@@ -503,38 +559,70 @@ export default function App() {
             />
           );
         })}
-        <div
-          className="componentDock"
-          onPointerDown={(event) => event.stopPropagation()}
-          onPointerMove={(event) => event.stopPropagation()}
-        >
-          <div className="sliderPreview componentPreview">
-            <GlassSlider
-              engineMode={engineMode}
-              glassLens={sliderLens}
-              glassSurfaceBlur={0}
-              glassTint={glassTint}
-              max={100}
-              min={0}
-              onValueChange={setSliderValue}
-              renderer={INITIAL_RENDERER}
-              sliderWidth="100%"
-              value={sliderValue}
-            />
+        {visiblePreviewCount > 0 && (
+          <div
+            className="componentDock"
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerMove={(event) => event.stopPropagation()}
+          >
+            {visibility.slider && (
+              <div className="sliderPreview componentPreview">
+                <GlassSlider
+                  engineMode={engineMode}
+                  glassLens={sliderLens}
+                  glassSurfaceBlur={0}
+                  glassTint={glassTint}
+                  max={100}
+                  min={0}
+                  onValueChange={setSliderValue}
+                  renderer={INITIAL_RENDERER}
+                  sliderWidth="100%"
+                  value={sliderValue}
+                />
+              </div>
+            )}
+            {visibility.switch && (
+              <SwitchPreviewStack
+                engineMode={engineMode}
+                glassLens={switchLensOverrideEnabled ? switchLens : undefined}
+                glassSurfaceBlur={0}
+                glassTint={glassTint}
+                renderer={INITIAL_RENDERER}
+              />
+            )}
+            {visibility.button && (
+              <div className="buttonPreview">
+                {/* No container chrome: the buttons float directly over the
+                    painting. The painting layer is an inset:0 child of the
+                    stage with background-size: cover, so anchoring the
+                    backdrop to the stage container reproduces the same cover
+                    transform — each button refracts the exact slice of the
+                    painting behind it. */}
+                {SWITCH_PREVIEW_SIZES.map((buttonSize) => (
+                  <GlassButton
+                    engineMode={engineMode}
+                    glassBackdrop={{ image: PAINTING_URL, anchor: containerRef }}
+                    glassLens={buttonLens}
+                    glassSurfaceBlur={0}
+                    glassTint={glassTint}
+                    key={buttonSize}
+                    renderer={INITIAL_RENDERER}
+                    size={buttonSize}
+                  >
+                    Liquid
+                  </GlassButton>
+                ))}
+              </div>
+            )}
+            {visibility.modal && (
+              <div className="modalPreview componentPreview">
+                <button className="modalPreviewButton" onClick={() => setIsModalVisible(true)} type="button">
+                  Modal
+                </button>
+              </div>
+            )}
           </div>
-          <SwitchPreviewStack
-            engineMode={engineMode}
-            glassLens={switchLensOverrideEnabled ? switchLens : undefined}
-            glassSurfaceBlur={0}
-            glassTint={glassTint}
-            renderer={INITIAL_RENDERER}
-          />
-          <div className="modalPreview componentPreview">
-            <button className="modalPreviewButton" onClick={() => setIsModalVisible(true)} type="button">
-              Modal
-            </button>
-          </div>
-        </div>
+        )}
         <div className="attribution">Giovanni Battista Tiepolo, Rinaldo and Armida in Her Garden</div>
       </section>
 
@@ -615,6 +703,27 @@ export default function App() {
                       >
                         {mode}
                       </button>
+                    ))}
+                  </div>
+                </div>
+              </details>
+
+              <details className="accordionSection" open>
+                <summary>
+                  <span>Visible</span>
+                  <b>{VISIBILITY_OPTIONS.filter(({ key }) => visibility[key]).length} on</b>
+                </summary>
+                <div className="accordionBody">
+                  <div className="visibilityGrid">
+                    {VISIBILITY_OPTIONS.map(({ key, label }) => (
+                      <label className="visibilityToggle" key={key}>
+                        <span>{label}</span>
+                        <input
+                          checked={visibility[key]}
+                          onChange={(event) => updateVisibility(key, event.target.checked)}
+                          type="checkbox"
+                        />
+                      </label>
                     ))}
                   </div>
                 </div>
@@ -1001,6 +1110,10 @@ button, input { font: inherit; }
   transform: translateZ(0);
   will-change: filter, clip-path;
 }
+.glassTargetHidden {
+  opacity: 0;
+  visibility: hidden;
+}
 .glassChrome {
   position: absolute;
   left: 0;
@@ -1046,13 +1159,15 @@ button, input { font: inherit; }
 .componentDock {
   position: absolute;
   left: 50%;
-  top: 72%;
+  top: 50%;
   z-index: 6;
-  display: grid;
-  grid-template-columns: minmax(280px, 380px) minmax(150px, 210px) 96px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 14px;
-  width: min(734px, calc(100% - 48px));
+  width: max-content;
+  max-width: calc(100% - 48px);
   transform: translate(-50%, -50%);
   pointer-events: auto;
 }
@@ -1070,9 +1185,11 @@ button, input { font: inherit; }
     0 2px 8px rgba(0,0,0,0.08);
 }
 .sliderPreview {
+  width: min(380px, calc(100vw - 48px));
   min-width: 0;
 }
 .switchPreview {
+  width: 210px;
   justify-items: stretch;
   min-height: 132px;
   padding: 20px 18px;
@@ -1092,7 +1209,17 @@ button, input { font: inherit; }
   letter-spacing: 0;
   text-transform: uppercase;
 }
+.buttonPreview {
+  /* No container chrome — just the buttons, stacked by size, floating over
+     the painting. */
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+}
 .modalPreview {
+  width: 96px;
   min-height: 132px;
   padding: 18px;
 }
@@ -1373,6 +1500,10 @@ button, input { font: inherit; }
 .segments button:active { transform: scale(0.96); }
 .segments button.active { background: #fff; color: #15191b; }
 .segments.tintMode { grid-template-columns: repeat(2, 1fr); }
+.visibilityGrid {
+  display: grid;
+  gap: 6px;
+}
 .group {
   display: grid;
   gap: 10px;
@@ -1382,6 +1513,24 @@ button, input { font: inherit; }
   gap: 6px;
   color: rgba(255,255,255,0.54);
   font-size: 12px;
+}
+.controlsPanel label.visibilityToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.045);
+  color: rgba(255,255,255,0.78);
+  cursor: pointer;
+}
+.visibilityToggle input {
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  accent-color: #6fd7d0;
+  cursor: pointer;
 }
 .controlsPanel label b, .labelRow b {
   color: rgba(255,255,255,0.86);
@@ -1475,9 +1624,15 @@ button, input { font: inherit; }
   .shell { grid-template-columns: 1fr; height: 100vh; overflow: hidden; }
   .stage { height: 100vh; min-height: 100vh; }
   .componentDock {
-    top: 72%;
-    grid-template-columns: 1fr;
+    top: 50%;
     width: min(340px, calc(100% - 32px));
+    max-width: calc(100% - 32px);
+  }
+  .sliderPreview,
+  .switchPreview,
+  .buttonPreview,
+  .modalPreview {
+    width: 100%;
   }
   .componentPreview { padding: 22px; }
   .switchPreview {
