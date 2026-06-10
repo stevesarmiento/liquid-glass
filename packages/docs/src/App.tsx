@@ -5,6 +5,7 @@ import styled, { createGlobalStyle } from "styled-components";
 import Topbar from "./components/Common/Topbar";
 import rootNav from "./nav";
 import GlassButtonPage from "./pages/components/GlassButtonPage";
+import GlassDropdownPage from "./pages/components/GlassDropdownPage";
 import GlassModalPage from "./pages/components/GlassModalPage";
 import GlassSliderPage from "./pages/components/GlassSliderPage";
 import GlassSwitchPage from "./pages/components/GlassSwitchPage";
@@ -130,6 +131,7 @@ const routes: Record<string, ComponentType> = {
   "/library/lens-params": LensParamsPage,
   "/library/react": ReactPage,
   "/components/glass-button": GlassButtonPage,
+  "/components/glass-dropdown": GlassDropdownPage,
   "/components/glass-modal": GlassModalPage,
   "/components/glass-slider": GlassSliderPage,
   "/components/glass-switch": GlassSwitchPage,

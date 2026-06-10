@@ -25,6 +25,14 @@ export {
   type GlassPointerVelocityTracker,
 } from "./material/useGlassDeformation";
 export {
+  computeGrabTransform,
+  useGlassGrab,
+  type GlassGrabHandle,
+  type GlassGrabHandlers,
+  type GlassGrabOptions,
+  type GlassGrabTransform,
+} from "./material/useGlassGrab";
+export {
   useGlassHoverTint,
   type GlassHoverTint,
   type GlassHoverTintOptions,

@@ -160,6 +160,13 @@ design-system components:
   default "pull" mode stretches from an edge anchor with cross-axis volume
   conservation; "press" mode compresses around the center (a press squish).
   Writes `transform` directly per rAF — no React state per frame.
+- `useGlassGrab(ref, options?)` — grabbable material: press-and-drag does not
+  move the element, it elastically deforms it — the 2D deflection vector is
+  rubberbanded, the element translates/stretches toward the pull while
+  constricting across it (volume conservation), and release springs back
+  underdamped with a bounce. Spreadable pointer `handlers` or imperative
+  `grab`/`pull`/`release`/`cancel`; `onDeflection(dx, dy)` (with
+  `applyTransform: false`) drives non-DOM material like canvas lens geometry.
 - `useGlassHoverTint(tint, options?)` — hover as material: a denser, more
   saturated tint variant instead of a CSS filter.
 - `<GlassPressEffects progress={...} />` — overexposure bloom + cursor light

@@ -10,6 +10,8 @@ import {
 
 import type { LensParams } from "../../engine/types";
 
+import { prefersReducedMotion, safeReleasePointerCapture, safeSetPointerCapture } from "./shared";
+
 /** How long the pressed cue is held after a release before it relaxes, in ms. */
 const DEFAULT_HOLD_MS = 320;
 /** Press tween attack duration, in ms. */
@@ -26,9 +28,6 @@ const DEFAULT_MAX_GLOW = 2;
 /** True for the keys that activate a button-like control (Space/Enter). */
 export const isGlassActivationKey = (key: string): boolean =>
   key === " " || key === "Enter" || key === "Spacebar";
-
-const prefersReducedMotion = (): boolean =>
-  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
 
@@ -162,36 +161,6 @@ function usePressProgress(pressed: boolean, inMs: number, outMs: number, enabled
   }, [enabled, inMs, outMs, pressed]);
 
   return progress;
-}
-
-function safeSetPointerCapture(element: Element, pointerId: number): void {
-  if (!("setPointerCapture" in element)) return;
-  try {
-    const pointerElement = element as Element & {
-      hasPointerCapture(pointerId: number): boolean;
-      setPointerCapture(pointerId: number): void;
-    };
-    if (!pointerElement.hasPointerCapture(pointerId)) {
-      pointerElement.setPointerCapture(pointerId);
-    }
-  } catch {
-    // Pointer capture can throw in embedded browsers or interrupted synthetic drags.
-  }
-}
-
-function safeReleasePointerCapture(element: Element, pointerId: number): void {
-  if (!("releasePointerCapture" in element) || !("hasPointerCapture" in element)) return;
-  try {
-    const pointerElement = element as Element & {
-      hasPointerCapture(pointerId: number): boolean;
-      releasePointerCapture(pointerId: number): void;
-    };
-    if (pointerElement.hasPointerCapture(pointerId)) {
-      pointerElement.releasePointerCapture(pointerId);
-    }
-  } catch {
-    // Ignore stale pointer captures after canceled or browser-interrupted drags.
-  }
 }
 
 /**

@@ -29,6 +29,7 @@ const menu: NavGroup[] = [
     label: "Components",
     items: [
       { href: "/components/glass-button", label: "Glass Button" },
+      { href: "/components/glass-dropdown", label: "Glass Dropdown" },
       { href: "/components/glass-modal", label: "Glass Modal" },
       { href: "/components/glass-slider", label: "Glass Slider" },
       { href: "/components/glass-switch", label: "Glass Switch" },

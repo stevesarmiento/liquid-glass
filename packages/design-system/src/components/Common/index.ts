@@ -1,5 +1,12 @@
 export { default as GlassButton } from "./GlassButton";
 export type { GlassButtonBackdrop, GlassButtonProps, GlassButtonVariant } from "./GlassButton/types";
+export { default as GlassDropdown } from "./GlassDropdown";
+export type {
+  GlassDropdownBackdrop,
+  GlassDropdownItem,
+  GlassDropdownPlacement,
+  GlassDropdownProps,
+} from "./GlassDropdown/types";
 export { default as GlassModal, DEFAULT_MODAL_GLASS_SETTINGS } from "./GlassModal";
 export type { GlassModalGlassSettings, GlassModalProps } from "./GlassModal/types";
 export { default as GlassSlider } from "./GlassSlider";

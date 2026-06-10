@@ -1,5 +1,6 @@
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 
+import { now, prefersReducedMotion } from "./shared";
 import { createSpring, rubberband, type Spring, type SpringConfig } from "./spring";
 
 /**
@@ -151,13 +152,6 @@ interface DeformationState {
   /** Smoothed pointer velocity in px/ms. */
   velocity: number;
 }
-
-const now = (): number => (typeof performance !== "undefined" ? performance.now() : Date.now());
-
-const prefersReducedMotion = (): boolean =>
-  typeof window !== "undefined" &&
-  typeof window.matchMedia === "function" &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
  * Imperative material-deformation driver for glass elements (thumbs, knobs,

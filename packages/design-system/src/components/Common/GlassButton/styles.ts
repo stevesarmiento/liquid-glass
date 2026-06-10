@@ -112,10 +112,23 @@ export const Spinner = styled.span`
   }
 `;
 
-export const Lens = styled.span<{ $active?: boolean; $dimmed?: boolean }>`
+/**
+ * Carrier for the grab deformation (useGlassGrab): press-and-drag elastically
+ * stretches the glass face toward the pull. It wraps Lens on a SEPARATE
+ * element because the press squish (useGlassDeformation) owns Lens's inline
+ * transform — two spring-driven writers on one element would fight, so each
+ * gets its own layer and the transforms compose by nesting.
+ */
+export const GrabLayer = styled.span`
   position: absolute;
   inset: 0;
   z-index: 2;
+  pointer-events: none;
+`;
+
+export const Lens = styled.span<{ $active?: boolean; $dimmed?: boolean }>`
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   pointer-events: none;
   border-radius: calc(var(--lgds-button-radius) - 1px);

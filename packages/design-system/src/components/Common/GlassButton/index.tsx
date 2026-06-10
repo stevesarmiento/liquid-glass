@@ -20,6 +20,7 @@ import {
   isGlassActivationKey,
   updateGlassPointerLight,
   useGlassDeformation,
+  useGlassGrab,
   useGlassHoverTint,
   useGlassPress
 } from "liquid-glass/react";
@@ -27,6 +28,7 @@ import {
 import {
   ButtonRoot,
   FaceReplica,
+  GrabLayer,
   Label,
   Lens,
   LensSourceBackground,
@@ -77,6 +79,14 @@ const PRESS_SQUISH_MAX_PX = 2;
 const PRESS_SQUISH_FALLOFF_PX = 12;
 /** Gentler-than-default cross-axis bulge so wide buttons don't visibly swell. */
 const PRESS_SQUISH_VOLUME = 0.3;
+/**
+ * Grab deformation: press-and-drag does not move the button (it is anchored
+ * UI), it elastically stretches the glass toward the pull and bounces back on
+ * release. Subtle on a button: deflection asymptote 8px, 40% of it applied as
+ * translation.
+ */
+const GRAB_MAX_PX = 8;
+const GRAB_TRANSLATE_FACTOR = 0.4;
 
 /** Backdrop images are cached per URL so N buttons share one decode. */
 const backdropImageCache = new Map<string, HTMLImageElement>();
@@ -126,6 +136,7 @@ const GlassButton = ({
   const theme = useGlassTheme();
   const controlRef = useRef<HTMLButtonElement>(null);
   const lensRef = useRef<HTMLSpanElement>(null);
+  const grabRef = useRef<HTMLSpanElement>(null);
   const [controlSize, setControlSize] = useState({ height: 0, width: 0 });
   // Bumped when the backdrop image finishes loading; the new render produces a
   // fresh drawSource closure, which is in GlassNode's draw-effect deps, so the
@@ -173,6 +184,15 @@ const GlassButton = ({
     maxPx: PRESS_SQUISH_MAX_PX,
     falloffPx: PRESS_SQUISH_FALLOFF_PX,
     volumeConservation: PRESS_SQUISH_VOLUME
+  });
+  // Grab deformation rides its OWN wrapper (GrabLayer) around the lens: the
+  // press squish above owns the Lens element's inline transform, so the two
+  // spring transforms compose by nesting instead of fighting over one style.
+  // Pointer-only by design — keyboard activation squishes but never grabs.
+  const grab = useGlassGrab(grabRef, {
+    enabled: isInteractive,
+    maxPx: GRAB_MAX_PX,
+    translateFactor: GRAB_TRANSLATE_FACTOR
   });
   // The SVG source replica cannot reproduce the live cover slice (it would
   // need scroll-synced rect measurements), so a backdrop upgrades "auto" to
@@ -269,10 +289,13 @@ const GlassButton = ({
   }, []);
 
   useEffect(() => {
-    // Drop any in-flight squish (and its inline transform) if the button is
-    // disabled mid-press.
-    if (!isInteractive) squish.cancel();
-  }, [isInteractive, squish]);
+    // Drop any in-flight squish/grab (and their inline transforms) if the
+    // button is disabled mid-press.
+    if (!isInteractive) {
+      squish.cancel();
+      grab.cancel();
+    }
+  }, [grab, isInteractive, squish]);
 
   const backdropImageUrl = glassBackdrop?.image;
 
@@ -300,24 +323,30 @@ const GlassButton = ({
   const handlePointerDown: PointerEventHandler<HTMLButtonElement> = (event) => {
     press.handlers.onPointerDown(event);
     if (isInteractive) squish.setPull(PRESS_SQUISH_PULL_PX);
+    // The grab anchors at the press origin; the button itself never moves, so
+    // engaging it costs nothing until the pointer actually drags.
+    grab.handlers.onPointerDown(event);
     onPointerDown?.(event);
   };
 
   const handlePointerUp: PointerEventHandler<HTMLButtonElement> = (event) => {
     press.handlers.onPointerUp(event);
     squish.release();
+    grab.handlers.onPointerUp(event);
     onPointerUp?.(event);
   };
 
   const handlePointerCancel: PointerEventHandler<HTMLButtonElement> = (event) => {
     press.handlers.onPointerCancel(event);
     squish.release();
+    grab.handlers.onPointerCancel(event);
     onPointerCancel?.(event);
   };
 
   const handleLostPointerCapture: PointerEventHandler<HTMLButtonElement> = (event) => {
     press.handlers.onLostPointerCapture(event);
     squish.release();
+    grab.handlers.onLostPointerCapture(event);
     onLostPointerCapture?.(event);
   };
 
@@ -367,6 +396,7 @@ const GlassButton = ({
       }}
       onPointerMove={(event) => {
         updateGlassPointerLight(event.currentTarget, event);
+        grab.handlers.onPointerMove(event);
         props.onPointerMove?.(event);
       }}
       onPointerUp={handlePointerUp}
@@ -388,38 +418,40 @@ const GlassButton = ({
         {loading && <Spinner aria-hidden="true" />}
         <span>{children}</span>
       </Label>
-      <Lens $active={canRenderGlass} $dimmed={!refractGlass} aria-hidden="true" ref={lensRef}>
-        {canRenderGlass && (
-          <GlassNode
-            className={glassNodeClassName}
-            contentClassName={glassContentClassName}
-            disabled={!refractGlass}
-            drawSource={drawSource}
-            engineMode={engineMode}
-            lens={{ ...lens, width: controlSize.width, height: controlSize.height }}
-            lensX={0}
-            lensY={0}
-            renderer={resolvedRenderer}
-            sourceChildren={
-              // Face material only — the label stays out of the refraction
-              // source so text renders crisp above the glass.
-              <>
-                <LensSourceBackground />
-                <FaceReplica aria-hidden="true" />
-              </>
-            }
-            sourceHeight={controlSize.height}
-            sourceWidth={controlSize.width}
-            surfaceBlur={glassSurfaceBlur}
-            surfaceClassName={glassSurfaceClassName}
-            surfaceTone="clear"
-            tint={surfaceTint}
-          />
-        )}
-        {/* Pointer light + overexposure bloom ride the press tween with the
-            optics/saturation; the layer renders nothing at zero progress. */}
-        <GlassPressEffects exposure={PRESS_EXPOSURE} progress={pressProgress} />
-      </Lens>
+      <GrabLayer aria-hidden="true" data-lgds-button-grab="" ref={grabRef}>
+        <Lens $active={canRenderGlass} $dimmed={!refractGlass} ref={lensRef}>
+          {canRenderGlass && (
+            <GlassNode
+              className={glassNodeClassName}
+              contentClassName={glassContentClassName}
+              disabled={!refractGlass}
+              drawSource={drawSource}
+              engineMode={engineMode}
+              lens={{ ...lens, width: controlSize.width, height: controlSize.height }}
+              lensX={0}
+              lensY={0}
+              renderer={resolvedRenderer}
+              sourceChildren={
+                // Face material only — the label stays out of the refraction
+                // source so text renders crisp above the glass.
+                <>
+                  <LensSourceBackground />
+                  <FaceReplica aria-hidden="true" />
+                </>
+              }
+              sourceHeight={controlSize.height}
+              sourceWidth={controlSize.width}
+              surfaceBlur={glassSurfaceBlur}
+              surfaceClassName={glassSurfaceClassName}
+              surfaceTone="clear"
+              tint={surfaceTint}
+            />
+          )}
+          {/* Pointer light + overexposure bloom ride the press tween with the
+              optics/saturation; the layer renders nothing at zero progress. */}
+          <GlassPressEffects exposure={PRESS_EXPOSURE} progress={pressProgress} />
+        </Lens>
+      </GrabLayer>
     </ButtonRoot>
   );
 };

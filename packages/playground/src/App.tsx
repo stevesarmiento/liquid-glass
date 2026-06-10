@@ -1,5 +1,5 @@
 import { type ComponentProps, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { GlassButton, GlassModal, GlassSlider, GlassSwitch, type GlassComponentSize } from "@liquid-glass/design-system";
+import { GlassButton, GlassDropdown, GlassModal, GlassSlider, GlassSwitch, type GlassComponentSize, type GlassDropdownItem } from "@liquid-glass/design-system";
 
 import {
   DEFAULT_LENS_PARAMS,
@@ -90,7 +90,7 @@ type FloatingControlsDrag = {
   originX: number;
   originY: number;
 };
-type VisibilityKey = "glass" | "slider" | "switch" | "button" | "modal";
+type VisibilityKey = "glass" | "slider" | "switch" | "button" | "dropdown" | "modal";
 type ComponentVisibility = Record<VisibilityKey, boolean>;
 
 const FLOATING_CONTROLS_WIDTH = 326;
@@ -115,6 +115,7 @@ const INITIAL_VISIBILITY: ComponentVisibility = {
   slider: false,
   switch: false,
   button: false,
+  dropdown: false,
   modal: false,
 };
 const VISIBILITY_OPTIONS: Array<{ key: VisibilityKey; label: string }> = [
@@ -122,7 +123,15 @@ const VISIBILITY_OPTIONS: Array<{ key: VisibilityKey; label: string }> = [
   { key: "slider", label: "Slider" },
   { key: "switch", label: "Switch" },
   { key: "button", label: "Button" },
+  { key: "dropdown", label: "Dropdown" },
   { key: "modal", label: "Modal" },
+];
+const DROPDOWN_PREVIEW_ITEMS: GlassDropdownItem[] = [
+  { id: "view", label: "View painting" },
+  { id: "favorite", label: "Add to favorites" },
+  { id: "share", label: "Share…" },
+  { id: "download", label: "Download", disabled: true },
+  { id: "remove", label: "Remove" },
 ];
 
 export default function App() {
@@ -147,6 +156,7 @@ export default function App() {
   const [positions, setPositions] = useState(INITIAL_LENS_POSITIONS.map((p) => ({ ...p })));
   const [dualLens, setDualLens] = useState(false);
   const [blend, setBlend] = useState(INITIAL_BLEND);
+  const [dropdownGap, setDropdownGap] = useState(10);
   const [engineMode, setEngineMode] = useState<LiquidGlassEngineMode>("auto");
   const [tintMode, setTintMode] = useState<TintMode>("custom");
   const [tintName, setTintName] = useState<GlassTintName>("clear");
@@ -163,7 +173,7 @@ export default function App() {
   const engine = useMemo(() => createLiquidGlassEngine({ mode: engineMode }), [engineMode]);
   const glassTint = tintMode === "preset" ? tintName : customTint;
   const tint = tintMode === "preset" ? resolveGlassTint(tintName) : createGlassTint(customTint);
-  const visiblePreviewCount = Number(visibility.slider) + Number(visibility.switch) + Number(visibility.button) + Number(visibility.modal);
+  const visiblePreviewCount = Number(visibility.slider) + Number(visibility.switch) + Number(visibility.button) + Number(visibility.dropdown) + Number(visibility.modal);
   const sliderLens = useMemo(
     () => ({
       width: 63,
@@ -221,6 +231,25 @@ export default function App() {
       specularRotation: lens.specularRotation,
       blur: Math.min(lens.blur, 3),
       mapSize: lens.mapSize,
+    }),
+    [lens],
+  );
+  const dropdownLens = useMemo<Partial<LensParams>>(
+    () => ({
+      scaleX: lens.scaleX,
+      scaleY: lens.scaleY,
+      chroma: lens.chroma,
+      depth: Math.min(lens.depth, 16),
+      dome: Math.min(lens.dome, 60),
+      glow: lens.glow,
+      edge: lens.edge,
+      glowSpread: lens.glowSpread,
+      glowExponent: lens.glowExponent,
+      edgeExponent: lens.edgeExponent,
+      specularRotation: lens.specularRotation,
+      blur: Math.min(lens.blur, 3),
+      // Merged maps regenerate per morph frame — cap so they stay sub-ms.
+      mapSize: Math.min(lens.mapSize, 256),
     }),
     [lens],
   );
@@ -614,6 +643,24 @@ export default function App() {
                 ))}
               </div>
             )}
+            {visibility.dropdown && (
+              <div className="dropdownPreview">
+                {/* No container chrome: like the buttons, the dropdown floats
+                    directly over the painting and its merged-lens goo refracts
+                    the cover slice behind the whole trigger+menu region
+                    (anchored to the stage container). */}
+                <GlassDropdown
+                  blend={blend}
+                  engineMode={engineMode}
+                  gap={dropdownGap}
+                  glassBackdrop={{ image: PAINTING_URL, anchor: containerRef }}
+                  glassLens={dropdownLens}
+                  glassTint={glassTint}
+                  items={DROPDOWN_PREVIEW_ITEMS}
+                  label="Open dropdown menu"
+                />
+              </div>
+            )}
             {visibility.modal && (
               <div className="modalPreview componentPreview">
                 <button className="modalPreviewButton" onClick={() => setIsModalVisible(true)} type="button">
@@ -732,7 +779,7 @@ export default function App() {
               <details className="accordionSection" open>
                 <summary>
                   <span>Lenses</span>
-                  <b>{dualLens ? `dual / blend ${Math.round(blend)}` : "single"}</b>
+                  <b>{`${dualLens ? "dual" : "single"} / blend ${Math.round(blend)}`}</b>
                 </summary>
                 <div className="accordionBody">
                   <div className="segments tintMode">
@@ -747,19 +794,36 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  {dualLens && (
+                  {/* Blend drives every merged-lens surface: the dual draggable
+                      blob AND the dropdown goo morph — always visible so goo
+                      defaults can be tuned against any preview. */}
+                  <label>
+                    <span>
+                      blend
+                      <b>{Math.round(blend)}</b>
+                    </span>
+                    <input
+                      min={0}
+                      max={120}
+                      step={1}
+                      type="range"
+                      value={blend}
+                      onChange={(event) => setBlend(Number(event.target.value))}
+                    />
+                  </label>
+                  {visibility.dropdown && (
                     <label>
                       <span>
-                        blend
-                        <b>{Math.round(blend)}</b>
+                        dropdown gap
+                        <b>{Math.round(dropdownGap)}</b>
                       </span>
                       <input
                         min={0}
-                        max={120}
+                        max={60}
                         step={1}
                         type="range"
-                        value={blend}
-                        onChange={(event) => setBlend(Number(event.target.value))}
+                        value={dropdownGap}
+                        onChange={(event) => setDropdownGap(Number(event.target.value))}
                       />
                     </label>
                   )}
@@ -1218,6 +1282,13 @@ button, input { font: inherit; }
   align-items: center;
   justify-content: center;
 }
+.dropdownPreview {
+  /* No container chrome — the trigger (and its goo menu, which overlays
+     absolutely) floats directly over the painting. */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
 .modalPreview {
   width: 96px;
   min-height: 132px;
@@ -1631,6 +1702,7 @@ button, input { font: inherit; }
   .sliderPreview,
   .switchPreview,
   .buttonPreview,
+  .dropdownPreview,
   .modalPreview {
     width: 100%;
   }
