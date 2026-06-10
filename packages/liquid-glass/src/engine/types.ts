@@ -30,6 +30,26 @@ export interface LensParams {
 /** Lens params with every optional field resolved to a concrete value. */
 export type ResolvedLensParams = Required<LensParams>;
 
+export interface MergedLensShape {
+  /** Lens center, in region px coordinates. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  radius: number;
+}
+
+export interface MergedMapInput {
+  regionWidth: number;
+  regionHeight: number;
+  /** 1–4 lens shapes, in region coordinates. */
+  lenses: MergedLensShape[];
+  /** Smooth-union blend distance k in px (0 = hard union). */
+  blend: number;
+  /** Shared optical params; width/height/radius/splay are ignored. */
+  lens: Partial<LensParams>;
+}
+
 export interface DisplacementMap {
   width: number;
   height: number;
@@ -69,6 +89,13 @@ export interface LiquidGlassEngine {
   readonly mode: ActiveLiquidGlassEngineMode;
   readonly ready: Promise<void>;
   generateDisplacementMap(params: LensParams): DisplacementMap;
+  /**
+   * Generates a multi-lens "liquid blend" (metaball) displacement map. The
+   * map may be non-square (longest side = mapSize, other side scaled by the
+   * region aspect ratio). Alpha carries antialiased blob coverage. `splay`
+   * is ignored in merged mode.
+   */
+  generateMergedDisplacementMap?(input: MergedMapInput): DisplacementMap;
   computeLensGeometry(input: GeometryInput): LensGeometry;
 }
 

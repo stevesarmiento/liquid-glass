@@ -1,4 +1,5 @@
 import { clamp, DEFAULT_LENS_PARAMS, normalizeLensParams } from "./defaults";
+import { generateMergedDisplacementMap } from "./merged";
 import type {
   DisplacementMap,
   GeometryInput,
@@ -12,6 +13,7 @@ export function createTsLiquidGlassEngine(): LiquidGlassEngine {
     mode: "ts",
     ready: Promise.resolve(),
     generateDisplacementMap,
+    generateMergedDisplacementMap,
     computeLensGeometry,
   };
 }

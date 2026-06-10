@@ -193,6 +193,54 @@ export function withTintBackgroundAlpha(tint: GlassTint, alpha: number): GlassTi
   };
 }
 
+/** Straight (non-premultiplied) 0..1 RGBA floats. */
+export type ParsedCssColor = [number, number, number, number];
+
+/**
+ * Parses the CSS color formats this module produces/accepts — `#rgb`,
+ * `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(r, g, b)`, and `rgba(r, g, b, a)`
+ * (whitespace-tolerant, integer or float channels) — into 0..1 RGBA floats
+ * for shader uniforms. Returns null for anything else (named colors, hsl…).
+ */
+export function parseCssColor(color: string): ParsedCssColor | null {
+  const value = color.trim();
+  if (value.startsWith("#")) return parseHexColor(value);
+  const match = /^rgba?\(([^)]*)\)$/i.exec(value);
+  if (!match) return null;
+  const parts = match[1]!.split(",").map((part) => part.trim());
+  if (parts.length < 3 || parts.length > 4) return null;
+  const channels: number[] = [];
+  for (let i = 0; i < 3; i += 1) {
+    const channel = Number.parseFloat(parts[i]!);
+    if (!Number.isFinite(channel) || parts[i] === "") return null;
+    channels.push(clamp(channel, 0, 255) / 255);
+  }
+  let alpha = 1;
+  if (parts.length === 4) {
+    alpha = Number.parseFloat(parts[3]!);
+    if (!Number.isFinite(alpha)) return null;
+  }
+  return [channels[0]!, channels[1]!, channels[2]!, clamp(alpha, 0, 1)];
+}
+
+function parseHexColor(hex: string): ParsedCssColor | null {
+  const digits = hex.slice(1);
+  if (!/^[0-9a-f]+$/i.test(digits)) return null;
+  const expanded =
+    digits.length === 3 || digits.length === 4
+      ? digits
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : digits;
+  if (expanded.length !== 6 && expanded.length !== 8) return null;
+  const r = Number.parseInt(expanded.slice(0, 2), 16) / 255;
+  const g = Number.parseInt(expanded.slice(2, 4), 16) / 255;
+  const b = Number.parseInt(expanded.slice(4, 6), 16) / 255;
+  const a = expanded.length === 8 ? Number.parseInt(expanded.slice(6, 8), 16) / 255 : 1;
+  return [r, g, b, a];
+}
+
 function isResolvedTint(input: GlassTintInput | GlassTint): input is GlassTint {
   return "background" in input && "border" in input && "highlight" in input && "shadow" in input;
 }

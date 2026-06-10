@@ -17,6 +17,15 @@ const menu: NavGroup[] = [
     ],
   },
   {
+    label: "Library",
+    items: [
+      { href: "/library/controller", label: "Controller" },
+      { href: "/library/liquid-blend", label: "Liquid Blend" },
+      { href: "/library/lens-params", label: "Lens Params" },
+      { href: "/library/react", label: "React" },
+    ],
+  },
+  {
     label: "Components",
     items: [
       { href: "/components/glass-modal", label: "Glass Modal" },

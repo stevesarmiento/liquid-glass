@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { createGlassTint, resolveGlassTint, withTintBackgroundAlpha } from "./tints";
+import {
+  GLASS_TINTS,
+  createGlassTint,
+  parseCssColor,
+  resolveGlassTint,
+  withTintBackgroundAlpha,
+} from "./tints";
 
 describe("glass tints", () => {
   it("creates dynamic rgba tint values from user input", () => {
@@ -77,5 +83,50 @@ describe("glass tints", () => {
     expect(tint.highlightRotation).toBe(32);
     expect(tint.highlightX).toBe(0.6);
     expect(tint.highlightY).toBe(0.4);
+  });
+});
+
+describe("parseCssColor", () => {
+  it("parses rgba() with spaces (the format this module produces)", () => {
+    expect(parseCssColor("rgba(72, 186, 190, 0.16)")).toEqual([72 / 255, 186 / 255, 190 / 255, 0.16]);
+    expect(parseCssColor("rgba(255,255,255,0.5)")).toEqual([1, 1, 1, 0.5]);
+    expect(parseCssColor("  rgba( 0 , 0 , 0 , 0 )  ")).toEqual([0, 0, 0, 0]);
+  });
+
+  it("parses rgb() with an implicit opaque alpha", () => {
+    expect(parseCssColor("rgb(18, 52, 86)")).toEqual([18 / 255, 52 / 255, 86 / 255, 1]);
+  });
+
+  it("parses #rgb, #rrggbb, and #rrggbbaa hex colors", () => {
+    expect(parseCssColor("#fff")).toEqual([1, 1, 1, 1]);
+    expect(parseCssColor("#123456")).toEqual([18 / 255, 52 / 255, 86 / 255, 1]);
+    expect(parseCssColor("#12345680")).toEqual([18 / 255, 52 / 255, 86 / 255, 128 / 255]);
+    expect(parseCssColor("#FFFFFF")).toEqual([1, 1, 1, 1]);
+  });
+
+  it("clamps out-of-range channels and alpha", () => {
+    expect(parseCssColor("rgba(300, -4, 128, 2)")).toEqual([1, 0, 128 / 255, 1]);
+  });
+
+  it("returns null for formats it does not understand", () => {
+    expect(parseCssColor("white")).toBeNull();
+    expect(parseCssColor("hsl(0, 0%, 100%)")).toBeNull();
+    expect(parseCssColor("#12")).toBeNull();
+    expect(parseCssColor("#nothex")).toBeNull();
+    expect(parseCssColor("rgba(1, 2)")).toBeNull();
+    expect(parseCssColor("")).toBeNull();
+  });
+
+  it("parses every color the built-in presets and createGlassTint produce", () => {
+    for (const preset of Object.values(GLASS_TINTS)) {
+      expect(parseCssColor(preset.background)).not.toBeNull();
+      expect(parseCssColor(preset.border)).not.toBeNull();
+      expect(parseCssColor(preset.highlight)).not.toBeNull();
+      expect(parseCssColor(preset.shadow)).not.toBeNull();
+    }
+    const custom = createGlassTint({ color: "#6fd7d0", opacity: 0.12, highlightOpacity: 0.4 });
+    expect(parseCssColor(custom.background)).not.toBeNull();
+    expect(parseCssColor(custom.border)).not.toBeNull();
+    expect(parseCssColor(custom.highlight)).not.toBeNull();
   });
 });

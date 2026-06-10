@@ -28,7 +28,7 @@ const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
 const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number; step: number }> = {
   width: { min: 72, max: 420, step: 1 },
   height: { min: 48, max: 300, step: 1 },
-  radius: { min: 0, max: 180, step: 1 },
+  radius: { min: 0, max: 210, step: 1 },
   scaleX: { min: 0, max: 60, step: 0.5 },
   scaleY: { min: 0, max: 60, step: 0.5 },
   chroma: { min: 0, max: 2, step: 0.01 },
@@ -48,9 +48,9 @@ const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number; step:
 const PAINTING_URL = "/images/rinaldo-armida.jpg";
 const INITIAL_LENS: ResolvedLensParams = {
   ...DEFAULT_LENS_PARAMS,
-  width: 330,
-  height: 184,
-  radius: 46,
+  width: 220,
+  height: 220,
+  radius: 110,
   scaleX: 28,
   scaleY: 22,
   chroma: 0.5,
@@ -101,6 +101,11 @@ type SwitchPreviewStackProps = Pick<
 >;
 
 const INITIAL_LENS_POSITION = { x: 0.61, y: 0.36 };
+const INITIAL_LENS_POSITIONS = [
+  { x: 0.42, y: 0.42 },
+  { x: 0.66, y: 0.5 },
+];
+const INITIAL_BLEND = 48;
 /** How often controller stats may trigger a React re-render. */
 const STATS_FLUSH_MS = 250;
 
@@ -109,7 +114,10 @@ export default function App() {
   const sourceRef = useRef<HTMLDivElement | null>(null);
   const targetRef = useRef<HTMLDivElement | null>(null);
   const glassChromeRef = useRef<HTMLDivElement | null>(null);
+  const glassChromeSecondRef = useRef<HTMLDivElement | null>(null);
   const lensPositionRef = useRef(INITIAL_LENS_POSITION);
+  const lensPositionsRef = useRef(INITIAL_LENS_POSITIONS.map((p) => ({ ...p })));
+  const dragLensIndexRef = useRef(0);
   const statsRef = useRef<LiquidGlassControllerStats | null>(null);
   const statsFlushRef = useRef<number | null>(null);
   const controllerRef = useRef<LiquidGlassController | null>(null);
@@ -120,6 +128,9 @@ export default function App() {
   const controlsDragFrameRef = useRef<number | null>(null);
   const [lens, setLens] = useState<ResolvedLensParams>(INITIAL_LENS);
   const [position, setPosition] = useState(INITIAL_LENS_POSITION);
+  const [positions, setPositions] = useState(INITIAL_LENS_POSITIONS.map((p) => ({ ...p })));
+  const [dualLens, setDualLens] = useState(true);
+  const [blend, setBlend] = useState(INITIAL_BLEND);
   const [engineMode, setEngineMode] = useState<LiquidGlassEngineMode>("auto");
   const [tintMode, setTintMode] = useState<TintMode>("custom");
   const [tintName, setTintName] = useState<GlassTintName>("clear");
@@ -194,6 +205,11 @@ export default function App() {
       target: targetRef.current,
       lens,
       position: { ...lensPositionRef.current, unit: "normalized" },
+      lenses: dualLens
+        ? lensPositionsRef.current.map((p) => ({ position: { ...p, unit: "normalized" as const } }))
+        : undefined,
+      blend,
+      tint: glassTint,
       mode: renderMode,
       renderer: INITIAL_RENDERER,
       sourceImageUrl: PAINTING_URL,
@@ -208,20 +224,30 @@ export default function App() {
     controllerRef.current?.update({
       lens,
       position: { ...lensPositionRef.current, unit: "normalized" },
+      lenses: dualLens
+        ? lensPositionsRef.current.map((p) => ({ position: { ...p, unit: "normalized" as const } }))
+        : undefined,
+      blend,
+      tint: glassTint,
       mode: renderMode,
       renderer: INITIAL_RENDERER,
       sourceImageUrl: PAINTING_URL,
     });
-  }, [lens, position, renderMode]);
+  }, [lens, position, positions, blend, dualLens, renderMode, glassTint]);
 
   // The lens position is driven imperatively during drags (no React render
   // per pointermove — Safari can't keep up with a full re-render per frame).
   // This effect re-syncs the imperative styles whenever React state changes.
   useLayoutEffect(() => {
     lensPositionRef.current = position;
-    applyLensVisuals(position);
+    lensPositionsRef.current = positions.map((p) => ({ ...p }));
+    if (dualLens) {
+      positions.forEach((p, index) => applyLensVisuals(p, index));
+    } else {
+      applyLensVisuals(position);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position, lens.width, lens.height, lens.radius]);
+  }, [position, positions, dualLens, lens.width, lens.height, lens.radius]);
 
   useLayoutEffect(() => {
     controlsPositionRef.current = controlsPosition;
@@ -262,14 +288,18 @@ export default function App() {
   }
 
   /** Write the lens-tracking styles directly (used per drag frame). */
-  function applyLensVisuals(next: { x: number; y: number }) {
-    const target = targetRef.current;
-    if (target) {
-      const clip = computeTargetClipPath(next, lens);
-      target.style.clipPath = clip;
-      target.style.setProperty("-webkit-clip-path", clip);
+  function applyLensVisuals(next: { x: number; y: number }, index = 0) {
+    // In dual mode the target layer is hidden by the webgl/canvas renderer,
+    // so skip the clip-path writes; single-lens keeps the existing behavior.
+    if (!dualLens) {
+      const target = targetRef.current;
+      if (target) {
+        const clip = computeTargetClipPath(next, lens);
+        target.style.clipPath = clip;
+        target.style.setProperty("-webkit-clip-path", clip);
+      }
     }
-    const chrome = glassChromeRef.current;
+    const chrome = index === 0 ? glassChromeRef.current : glassChromeSecondRef.current;
     if (chrome) {
       chrome.style.left = `${next.x * 100}%`;
       chrome.style.top = `${next.y * 100}%`;
@@ -278,6 +308,14 @@ export default function App() {
 
   /** Commit the imperative drag position back into React state (pointer up). */
   function commitLensPosition() {
+    if (dualLens) {
+      setPositions((current) => {
+        const refs = lensPositionsRef.current;
+        const same = current.every((p, i) => p.x === refs[i].x && p.y === refs[i].y);
+        return same ? current : refs.map((p) => ({ ...p }));
+      });
+      return;
+    }
     setPosition((current) =>
       current.x === lensPositionRef.current.x && current.y === lensPositionRef.current.y
         ? current
@@ -301,7 +339,7 @@ export default function App() {
     }));
   }
 
-  function handlePointer(event: PointerEvent<HTMLElement>) {
+  function handlePointer(event: PointerEvent<HTMLElement>, isDown = false) {
     const rect = event.currentTarget.getBoundingClientRect();
     const next = {
       x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
@@ -309,9 +347,36 @@ export default function App() {
     };
     // Imperative drag path: feed the controller directly (it rAF-coalesces)
     // and move the tracking elements without a React render per pointermove.
+    if (dualLens) {
+      if (isDown) {
+        // Pick the lens whose center is closest to the pointer (in px).
+        dragLensIndexRef.current = nearestLensIndex(next, rect.width, rect.height);
+      }
+      const index = dragLensIndexRef.current;
+      lensPositionsRef.current[index] = next;
+      controllerRef.current?.setLensPosition(index, { ...next, unit: "normalized" });
+      applyLensVisuals(next, index);
+      return;
+    }
     lensPositionRef.current = next;
     controllerRef.current?.setPosition({ ...next, unit: "normalized" });
     applyLensVisuals(next);
+  }
+
+  /** Index of the lens whose center is nearest to the pointer, in stage px. */
+  function nearestLensIndex(point: { x: number; y: number }, width: number, height: number): number {
+    let best = 0;
+    let bestDistance = Infinity;
+    lensPositionsRef.current.forEach((p, index) => {
+      const dx = (p.x - point.x) * width;
+      const dy = (p.y - point.y) * height;
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    });
+    return best;
   }
 
   function handleControlsDragStart(event: PointerEvent<HTMLElement>) {
@@ -379,7 +444,7 @@ export default function App() {
         className="stage"
         onPointerDown={(event) => {
           safeSetPointerCapture(event.currentTarget, event.pointerId);
-          handlePointer(event);
+          handlePointer(event, true);
         }}
         onPointerMove={(event) => {
           if (safeHasPointerCapture(event.currentTarget, event.pointerId)) handlePointer(event);
@@ -397,34 +462,47 @@ export default function App() {
           className="paintingLayer glassTarget"
           style={{ backgroundImage: `url(${PAINTING_URL})` }}
         />
-        <div
-          ref={glassChromeRef}
-          className="glassChrome"
-          style={{
-            "--glass-tint-bg": tint.background,
-            "--glass-tint-border": tint.border,
-            "--glass-tint-highlight": tint.highlight,
-            "--glass-highlight-width": formatHighlightPosition(tint.highlightWidth),
-            "--glass-highlight-height": formatHighlightPosition(tint.highlightHeight),
-            "--glass-highlight-core": formatHighlightPosition(tint.highlightCore),
-            "--glass-highlight-spread": formatHighlightPosition(tint.highlightSpread),
-            "--glass-highlight-rotation": formatHighlightRotation(tint.highlightRotation),
-            "--glass-highlight-x": formatHighlightPosition(tint.highlightX),
-            "--glass-highlight-y": formatHighlightPosition(tint.highlightY),
-            "--glass-tint-shadow": tint.shadow,
-            "--glass-radius": `${lens.radius}px`,
-            // left/top track the lens imperatively (applyLensVisuals) so
-            // drags never depend on a React render.
-            left: `${position.x * 100}%`,
-            top: `${position.y * 100}%`,
-            width: lens.width,
-            height: lens.height,
-            borderRadius: lens.radius,
-            transform: "translate3d(-50%, -50%, 0)",
-            WebkitBackdropFilter: `blur(0px) saturate(${tint.saturation})`,
-            backdropFilter: `blur(0px) saturate(${tint.saturation})`,
-          } as React.CSSProperties}
-        />
+        {/* In dual-lens (merged) mode the WebGL/canvas shader draws the
+            chrome (backdrop saturation, tint fill, border, angular rim
+            highlight, and the drop shadow) from the merged blob SDF, so the
+            CSS chrome overlays are not rendered at all. The shader chrome is
+            visually close but not pixel-exact to this CSS (the highlight is
+            an angular rim lobe rather than a blurred radial gradient);
+            single-lens mode keeps the CSS chrome untouched. */}
+        {(dualLens ? [] : [0]).map((index) => {
+          const chromePosition = dualLens ? positions[index] : position;
+          return (
+            <div
+              key={index}
+              ref={index === 0 ? glassChromeRef : glassChromeSecondRef}
+              className="glassChrome"
+              style={{
+                "--glass-tint-bg": tint.background,
+                "--glass-tint-border": tint.border,
+                "--glass-tint-highlight": tint.highlight,
+                "--glass-highlight-width": formatHighlightPosition(tint.highlightWidth),
+                "--glass-highlight-height": formatHighlightPosition(tint.highlightHeight),
+                "--glass-highlight-core": formatHighlightPosition(tint.highlightCore),
+                "--glass-highlight-spread": formatHighlightPosition(tint.highlightSpread),
+                "--glass-highlight-rotation": formatHighlightRotation(tint.highlightRotation),
+                "--glass-highlight-x": formatHighlightPosition(tint.highlightX),
+                "--glass-highlight-y": formatHighlightPosition(tint.highlightY),
+                "--glass-tint-shadow": tint.shadow,
+                "--glass-radius": `${lens.radius}px`,
+                // left/top track the lens imperatively (applyLensVisuals) so
+                // drags never depend on a React render.
+                left: `${chromePosition.x * 100}%`,
+                top: `${chromePosition.y * 100}%`,
+                width: lens.width,
+                height: lens.height,
+                borderRadius: lens.radius,
+                transform: "translate3d(-50%, -50%, 0)",
+                WebkitBackdropFilter: `blur(0px) saturate(${tint.saturation})`,
+                backdropFilter: `blur(0px) saturate(${tint.saturation})`,
+              } as React.CSSProperties}
+            />
+          );
+        })}
         <div
           className="componentDock"
           onPointerDown={(event) => event.stopPropagation()}
@@ -539,6 +617,43 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                </div>
+              </details>
+
+              <details className="accordionSection" open>
+                <summary>
+                  <span>Lenses</span>
+                  <b>{dualLens ? `dual / blend ${Math.round(blend)}` : "single"}</b>
+                </summary>
+                <div className="accordionBody">
+                  <div className="segments tintMode">
+                    {(["single", "dual"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        className={(dualLens ? "dual" : "single") === mode ? "active" : ""}
+                        onClick={() => setDualLens(mode === "dual")}
+                        type="button"
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                  {dualLens && (
+                    <label>
+                      <span>
+                        blend
+                        <b>{Math.round(blend)}</b>
+                      </span>
+                      <input
+                        min={0}
+                        max={120}
+                        step={1}
+                        type="range"
+                        value={blend}
+                        onChange={(event) => setBlend(Number(event.target.value))}
+                      />
+                    </label>
+                  )}
                 </div>
               </details>
 

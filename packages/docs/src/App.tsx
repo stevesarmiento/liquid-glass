@@ -8,6 +8,10 @@ import GlassModalPage from "./pages/components/GlassModalPage";
 import GlassSliderPage from "./pages/components/GlassSliderPage";
 import GlassSwitchPage from "./pages/components/GlassSwitchPage";
 import GuidesPage from "./pages/guides";
+import ControllerPage from "./pages/library/ControllerPage";
+import LensParamsPage from "./pages/library/LensParamsPage";
+import LiquidBlendPage from "./pages/library/LiquidBlendPage";
+import ReactPage from "./pages/library/ReactPage";
 import IntroductionPage from "./pages";
 
 const GlobalDocsStyle = createGlobalStyle`
@@ -120,6 +124,10 @@ const Content = styled.main`
 const routes: Record<string, ComponentType> = {
   "/": IntroductionPage,
   "/guides": GuidesPage,
+  "/library/controller": ControllerPage,
+  "/library/liquid-blend": LiquidBlendPage,
+  "/library/lens-params": LensParamsPage,
+  "/library/react": ReactPage,
   "/components/glass-modal": GlassModalPage,
   "/components/glass-slider": GlassSliderPage,
   "/components/glass-switch": GlassSwitchPage,

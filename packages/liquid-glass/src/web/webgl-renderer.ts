@@ -1,3 +1,4 @@
+import { MERGED_ALPHA_DISTANCE_RANGE } from "../engine/merged";
 import type { DisplacementMap, LensParams } from "../engine/types";
 import { CANVAS_STRENGTH } from "./render-utils";
 import {
@@ -43,6 +44,65 @@ export interface WebglGlassViewport {
   height: number;
 }
 
+/**
+ * Glass "chrome" drawn by the shader from the merged blob SDF (maskMode
+ * "map" only): backdrop saturation, tint fill, per-lens interior highlight
+ * glow, border band, rim highlight, and a drop shadow composited under the
+ * blob. Colors are straight
+ * (non-premultiplied) 0..1 RGBA floats. The optional fields default to inert
+ * values (saturation 1, transparent shadow, round wide lobe).
+ */
+export interface WebglGlassChrome {
+  /** Fill composited src-over the refracted scene inside the blob. */
+  tint: [number, number, number, number];
+  /** Border band color. */
+  border: [number, number, number, number];
+  /** Border band width in CSS px, inward from the blob edge. */
+  borderWidth: number;
+  /** Rim highlight color the border blends toward on the lit side. */
+  highlight: [number, number, number];
+  /** 0..1 rim highlight intensity (0 disables the rim entirely). */
+  highlightStrength: number;
+  /** CSS-space unit vector toward the light; (0, -1) is light from above. */
+  lightDir: [number, number];
+  /** ~0..1 angular width of the rim lobe (wider = lower exponent). Default 0. */
+  highlightSpread?: number;
+  /** 0..1 tight boosted core lobe mixed into the rim peak. Default 0. */
+  highlightCore?: number;
+  /**
+   * Anisotropic stretch of the rim lobe (highlight width/height fractions);
+   * [1, 1] keeps it round. Default [1, 1].
+   */
+  highlightAniso?: [number, number];
+  /**
+   * Interior highlight glow color (straight RGBA, opacity baked into alpha).
+   * Drawn per lens (`lensRects`) src-over the tint fill, under the border —
+   * the CSS chrome's radial-gradient background layer + blurred `::before`
+   * hot-spot. Alpha 0 (default) disables the glow.
+   */
+  glowColor?: [number, number, number, number];
+  /**
+   * Glow gradient anchor as fractions of each lens box (can be negative /
+   * out of box, e.g. [0.24, -0.2] anchors above the lens). Default [0.5, 0.5].
+   */
+  glowAnchor?: [number, number];
+  /** Glow gradient radii as fractions of the lens width/height. Default [1, 1]. */
+  glowRadii?: [number, number];
+  /** Hot-spot rotation in radians (CSS clockwise). Default 0. */
+  glowRotation?: number;
+  /** Backdrop saturation applied inside the blob; 1 (default) is a no-op. */
+  saturation?: number;
+  /** Drop shadow color; alpha 0 (default) disables the shadow. */
+  shadowColor?: [number, number, number, number];
+  /**
+   * Shadow offset in CSS px. |offset| + blur must stay within the map's
+   * alpha-band range (alphaDistRange) or the shadow clips to a hard ring.
+   */
+  shadowOffset?: [number, number];
+  /** Shadow fade distance past the blob edge, in CSS px. */
+  shadowBlur?: number;
+}
+
 export interface WebglGlassDrawInput {
   /** Image, canvas, or bitmap holding the scene behind the lens. */
   scene: WebglGlassSceneSource;
@@ -69,6 +129,32 @@ export interface WebglGlassDrawInput {
   fit?: "cover" | "fill";
   pixelRatio?: number;
   strength?: number;
+  /**
+   * "rect" (default) masks the output with the rounded-rect SDF of
+   * `geometry`. "map" decodes a signed distance from the displacement map's
+   * alpha channel instead — used for merged multi-lens (metaball) maps,
+   * whose alpha encodes an SDF band and whose `geometry` is the merged
+   * region rect.
+   */
+  maskMode?: "rect" | "map";
+  /**
+   * Chrome (saturation + tint fill + border + rim highlight + drop shadow)
+   * drawn from the merged blob SDF. Only takes effect with maskMode "map";
+   * omitted = no chrome.
+   */
+  chrome?: WebglGlassChrome;
+  /**
+   * Per-lens rects (center + half size, in region px relative to
+   * `geometry`'s top-left) the interior glow is anchored to. Up to 4 entries
+   * (extra entries are ignored); only takes effect with maskMode "map" and a
+   * chrome whose `glowColor` alpha is > 0.
+   */
+  lensRects?: Array<{ x: number; y: number; halfW: number; halfH: number }>;
+  /**
+   * Half-range (px) of the signed-distance band encoded in the map's alpha
+   * channel. Defaults to the engine's MERGED_ALPHA_DISTANCE_RANGE.
+   */
+  alphaDistRange?: number;
 }
 
 export interface WebglGlassRendererOptions {
@@ -138,6 +224,27 @@ interface GlassUniforms {
   radius: WebGLUniformLocation | null;
   ratio: WebGLUniformLocation | null;
   chromaScale: WebGLUniformLocation | null;
+  maskMode: WebGLUniformLocation | null;
+  alphaDistRange: WebGLUniformLocation | null;
+  tintColor: WebGLUniformLocation | null;
+  borderColor: WebGLUniformLocation | null;
+  borderWidth: WebGLUniformLocation | null;
+  highlightColor: WebGLUniformLocation | null;
+  highlightStrength: WebGLUniformLocation | null;
+  lightDir: WebGLUniformLocation | null;
+  highlightSpread: WebGLUniformLocation | null;
+  highlightCore: WebGLUniformLocation | null;
+  highlightAniso: WebGLUniformLocation | null;
+  glassLensCount: WebGLUniformLocation | null;
+  glassLensRect: Array<WebGLUniformLocation | null>;
+  glowColor: WebGLUniformLocation | null;
+  glowAnchor: WebGLUniformLocation | null;
+  glowRadii: WebGLUniformLocation | null;
+  glowRotation: WebGLUniformLocation | null;
+  saturation: WebGLUniformLocation | null;
+  shadowColor: WebGLUniformLocation | null;
+  shadowOffset: WebGLUniformLocation | null;
+  shadowBlur: WebGLUniformLocation | null;
 }
 
 interface GlResources {
@@ -374,6 +481,29 @@ function createResources(gl: WebGL2RenderingContext): GlResources {
       radius: gl.getUniformLocation(glassProgram, "u_radius"),
       ratio: gl.getUniformLocation(glassProgram, "u_ratio"),
       chromaScale: gl.getUniformLocation(glassProgram, "u_chromaScale"),
+      maskMode: gl.getUniformLocation(glassProgram, "u_maskMode"),
+      alphaDistRange: gl.getUniformLocation(glassProgram, "u_alphaDistRange"),
+      tintColor: gl.getUniformLocation(glassProgram, "u_tintColor"),
+      borderColor: gl.getUniformLocation(glassProgram, "u_borderColor"),
+      borderWidth: gl.getUniformLocation(glassProgram, "u_borderWidth"),
+      highlightColor: gl.getUniformLocation(glassProgram, "u_highlightColor"),
+      highlightStrength: gl.getUniformLocation(glassProgram, "u_highlightStrength"),
+      lightDir: gl.getUniformLocation(glassProgram, "u_lightDir"),
+      highlightSpread: gl.getUniformLocation(glassProgram, "u_highlightSpread"),
+      highlightCore: gl.getUniformLocation(glassProgram, "u_highlightCore"),
+      highlightAniso: gl.getUniformLocation(glassProgram, "u_highlightAniso"),
+      glassLensCount: gl.getUniformLocation(glassProgram, "u_glassLensCount"),
+      glassLensRect: [0, 1, 2, 3].map((i) =>
+        gl.getUniformLocation(glassProgram, `u_glassLensRect[${i}]`),
+      ),
+      glowColor: gl.getUniformLocation(glassProgram, "u_glowColor"),
+      glowAnchor: gl.getUniformLocation(glassProgram, "u_glowAnchor"),
+      glowRadii: gl.getUniformLocation(glassProgram, "u_glowRadii"),
+      glowRotation: gl.getUniformLocation(glassProgram, "u_glowRotation"),
+      saturation: gl.getUniformLocation(glassProgram, "u_saturation"),
+      shadowColor: gl.getUniformLocation(glassProgram, "u_shadowColor"),
+      shadowOffset: gl.getUniformLocation(glassProgram, "u_shadowOffset"),
+      shadowBlur: gl.getUniformLocation(glassProgram, "u_shadowBlur"),
     },
     quadBuffer,
     vao,
@@ -634,6 +764,55 @@ function drawGlassPass(
     baseScale * (1 + 0.1 * lens.chroma),
     baseScale,
   );
+  gl.uniform1i(r.glassUniforms.maskMode, input.maskMode === "map" ? 1 : 0);
+
+  // Chrome uniforms: zero alphas / zero strength are exact no-ops in the
+  // shader, so the rect-mask path stays byte-identical to the pre-chrome one.
+  const chrome = input.chrome;
+  gl.uniform1f(r.glassUniforms.alphaDistRange, input.alphaDistRange ?? MERGED_ALPHA_DISTANCE_RANGE);
+  const tint = chrome?.tint ?? [0, 0, 0, 0];
+  gl.uniform4f(r.glassUniforms.tintColor, tint[0], tint[1], tint[2], tint[3]);
+  const border = chrome?.border ?? [0, 0, 0, 0];
+  gl.uniform4f(r.glassUniforms.borderColor, border[0], border[1], border[2], border[3]);
+  gl.uniform1f(r.glassUniforms.borderWidth, chrome?.borderWidth ?? 0);
+  const highlight = chrome?.highlight ?? [1, 1, 1];
+  gl.uniform3f(r.glassUniforms.highlightColor, highlight[0], highlight[1], highlight[2]);
+  gl.uniform1f(r.glassUniforms.highlightStrength, chrome?.highlightStrength ?? 0);
+  const lightDir = chrome?.lightDir ?? [0, -1];
+  gl.uniform2f(r.glassUniforms.lightDir, lightDir[0], lightDir[1]);
+  gl.uniform1f(r.glassUniforms.highlightSpread, chrome?.highlightSpread ?? 0);
+  gl.uniform1f(r.glassUniforms.highlightCore, chrome?.highlightCore ?? 0);
+  const aniso = chrome?.highlightAniso ?? [1, 1];
+  gl.uniform2f(r.glassUniforms.highlightAniso, aniso[0], aniso[1]);
+  // Interior glow: per-lens rects + gradient params. A zero lens count (or
+  // zero glow alpha) keeps the glow loop inert; the shader only evaluates it
+  // in mask mode 1 anyway.
+  const lensRects = input.lensRects ?? [];
+  const lensCount = Math.min(4, lensRects.length);
+  gl.uniform1i(r.glassUniforms.glassLensCount, lensCount);
+  for (let i = 0; i < 4; i += 1) {
+    const rect = i < lensCount ? lensRects[i] : null;
+    gl.uniform4f(
+      r.glassUniforms.glassLensRect[i],
+      rect?.x ?? 0,
+      rect?.y ?? 0,
+      rect?.halfW ?? 0,
+      rect?.halfH ?? 0,
+    );
+  }
+  const glowColor = chrome?.glowColor ?? [0, 0, 0, 0];
+  gl.uniform4f(r.glassUniforms.glowColor, glowColor[0], glowColor[1], glowColor[2], glowColor[3]);
+  const glowAnchor = chrome?.glowAnchor ?? [0.5, 0.5];
+  gl.uniform2f(r.glassUniforms.glowAnchor, glowAnchor[0], glowAnchor[1]);
+  const glowRadii = chrome?.glowRadii ?? [1, 1];
+  gl.uniform2f(r.glassUniforms.glowRadii, glowRadii[0], glowRadii[1]);
+  gl.uniform1f(r.glassUniforms.glowRotation, chrome?.glowRotation ?? 0);
+  gl.uniform1f(r.glassUniforms.saturation, chrome?.saturation ?? 1);
+  const shadowColor = chrome?.shadowColor ?? [0, 0, 0, 0];
+  gl.uniform4f(r.glassUniforms.shadowColor, shadowColor[0], shadowColor[1], shadowColor[2], shadowColor[3]);
+  const shadowOffset = chrome?.shadowOffset ?? [0, 0];
+  gl.uniform2f(r.glassUniforms.shadowOffset, shadowOffset[0], shadowOffset[1]);
+  gl.uniform1f(r.glassUniforms.shadowBlur, chrome?.shadowBlur ?? 0);
 
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }

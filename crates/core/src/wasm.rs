@@ -3,8 +3,9 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    compute_lens_geometry, generate_displacement_map, normalize_lens_params, GeometryInput,
-    PartialLensParams, PositionUnit, RenderMode,
+    compute_lens_geometry, generate_displacement_map, generate_merged_displacement_map,
+    normalize_lens_params, GeometryInput, MergedMapInput, PartialLensParams, PositionUnit,
+    RenderMode,
 };
 
 /// Geometry input as received from JS: the lens may be partial (or missing),
@@ -29,6 +30,18 @@ pub fn wasm_generate_displacement_map(params: JsValue) -> Result<Uint8Array, JsV
     let partial: PartialLensParams = serde_wasm_bindgen::from_value(params)?;
     let params = normalize_lens_params(partial);
     let map = generate_displacement_map(&params);
+    Ok(Uint8Array::from(map.rgba.as_slice()))
+}
+
+#[wasm_bindgen(js_name = generateMergedDisplacementMap)]
+pub fn wasm_generate_merged_displacement_map(input: JsValue) -> Result<Uint8Array, JsValue> {
+    let input: MergedMapInput = serde_wasm_bindgen::from_value(input)?;
+    if input.lenses.is_empty() {
+        return Err(JsValue::from_str(
+            "generateMergedDisplacementMap requires at least one lens",
+        ));
+    }
+    let map = generate_merged_displacement_map(&input);
     Ok(Uint8Array::from(map.rgba.as_slice()))
 }
 

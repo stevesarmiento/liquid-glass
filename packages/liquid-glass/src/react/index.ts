@@ -1,4 +1,6 @@
 export { LiquidGlass, type LiquidGlassProps } from "./LiquidGlass";
+export type { LensInstanceInput, LiquidGlassController } from "../web/controller";
+export type { GlassTint, GlassTintInput, GlassTintName } from "../web/tints";
 export { GlassNode, type GlassNodeProps } from "./GlassNode";
 export {
   GlassSurface,

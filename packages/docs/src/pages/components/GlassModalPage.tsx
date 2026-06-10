@@ -100,6 +100,11 @@ export default function GlassModalPage() {
       <div>
         <h1>Glass Modal</h1>
         <p>Portal-rendered dialog with a glass surface, backdrop dismissal, escape handling, and body scroll lock.</p>
+        <p>
+          The panel currently renders single-lens glass through the library's GlassNode primitive;
+          its glass is customizable per instance via the glassLens (lens optics) and glassTint
+          (chrome tint) props.
+        </p>
       </div>
 
       <ModalPreviewContainer>

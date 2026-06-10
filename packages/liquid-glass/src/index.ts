@@ -10,12 +10,23 @@ export {
   roundedRectSdf,
   targetBleed,
 } from "./engine/ts-engine";
+export {
+  MERGED_ALPHA_DISTANCE_RANGE,
+  generateMergedDisplacementMap,
+  mergedMapKey,
+} from "./engine/merged";
 export { PARITY_TOLERANCE, compareEngineOutput, compareMapBytes } from "./engine/parity";
 export type { ParityResult } from "./engine/parity";
 export { getGlassFilterBleed, getGlassFilterVersion } from "./web/filter-version";
 export { isSafari } from "./web/is-safari";
 export { renderLocalGlassCanvas } from "./web/local-canvas";
-export { GLASS_TINTS, createGlassTint, resolveGlassTint, withTintBackgroundAlpha } from "./web/tints";
+export {
+  GLASS_TINTS,
+  createGlassTint,
+  parseCssColor,
+  resolveGlassTint,
+  withTintBackgroundAlpha,
+} from "./web/tints";
 export type {
   ActiveLiquidGlassEngineMode,
   DisplacementMap,
@@ -28,6 +39,8 @@ export type {
   LiquidGlassEngineMode,
   LiquidGlassEngineOptions,
   LiquidGlassRenderMode,
+  MergedLensShape,
+  MergedMapInput,
   ResolvedLensParams,
 } from "./engine/types";
 export type {
@@ -38,9 +51,10 @@ export type {
   LocalGlassCanvasRenderInput,
   LocalGlassCanvasRenderResult,
 } from "./web/local-canvas";
-export type { GlassTint, GlassTintInput, GlassTintName, GlassTintPreset } from "./web/tints";
+export type { GlassTint, GlassTintInput, GlassTintName, GlassTintPreset, ParsedCssColor } from "./web/tints";
 export {
   createLiquidGlassController,
+  type LensInstanceInput,
   type LiquidGlassController,
   type LiquidGlassControllerOptions,
   type LiquidGlassControllerStats,
@@ -48,6 +62,7 @@ export {
 } from "./web/controller";
 export {
   createWebglGlassRenderer,
+  type WebglGlassChrome,
   type WebglGlassDrawInput,
   type WebglGlassLensRect,
   type WebglGlassRenderer,

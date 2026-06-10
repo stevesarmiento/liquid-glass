@@ -43,6 +43,16 @@ export function createLiquidGlassEngine(options: LiquidGlassEngineOptions = {}):
     generateDisplacementMap(params) {
       return active.generateDisplacementMap(normalizeLensParams(params));
     },
+    generateMergedDisplacementMap(input) {
+      // Both engines implement merged generation today (the WASM engine
+      // delegates to TS until the Rust port lands); fall back to the TS
+      // engine if a future active engine omits it.
+      const generate = active.generateMergedDisplacementMap ?? tsEngine.generateMergedDisplacementMap;
+      if (!generate) {
+        throw new Error("generateMergedDisplacementMap is not available on the active engine");
+      }
+      return generate(input);
+    },
     computeLensGeometry(input) {
       return active.computeLensGeometry(input);
     },

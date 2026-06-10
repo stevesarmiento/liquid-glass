@@ -11,11 +11,11 @@ pub struct DisplacementMap {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct DomeConstants {
-    rx: f32,
-    ry: f32,
-    scale_x: f32,
-    scale_y: f32,
+pub(crate) struct DomeConstants {
+    pub(crate) rx: f32,
+    pub(crate) ry: f32,
+    pub(crate) scale_x: f32,
+    pub(crate) scale_y: f32,
 }
 
 pub fn generate_displacement_map(params: &LensParams) -> DisplacementMap {
@@ -158,7 +158,7 @@ fn integrate_dome(radius: f32, half: f32) -> f32 {
     sum / 200.0
 }
 
-fn compute_dome_constants(depth: f32, half_w: f32, half_h: f32) -> DomeConstants {
+pub(crate) fn compute_dome_constants(depth: f32, half_w: f32, half_h: f32) -> DomeConstants {
     let safe_depth = depth.clamp(0.01, (half_w.min(half_h) - 1.0).max(0.01));
     let rx = (half_w * half_w + safe_depth * safe_depth) / (2.0 * safe_depth);
     let ry = (half_h * half_h + safe_depth * safe_depth) / (2.0 * safe_depth);
@@ -173,7 +173,7 @@ fn compute_dome_constants(depth: f32, half_w: f32, half_h: f32) -> DomeConstants
     }
 }
 
-fn dome_gradient(value: f32, radius: f32, scale: f32) -> f32 {
+pub(crate) fn dome_gradient(value: f32, radius: f32, scale: f32) -> f32 {
     let x = value.min(0.999 * radius);
     (x / (radius * radius - x * x).sqrt()) * scale
 }

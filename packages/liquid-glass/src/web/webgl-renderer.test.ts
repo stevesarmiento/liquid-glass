@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { normalizeLensParams } from "../engine/defaults";
+import { MERGED_ALPHA_DISTANCE_RANGE } from "../engine/merged";
 import type { DisplacementMap } from "../engine/types";
 import { createWebglGlassRenderer, type WebglGlassDrawInput } from "./webgl-renderer";
 import {
@@ -88,11 +89,14 @@ function createStubGl() {
     framebufferTexture2D: record("framebufferTexture2D"),
     deleteFramebuffer: record("deleteFramebuffer"),
     useProgram: record("useProgram"),
-    getUniformLocation: () => ({}),
-    uniform1i: record("uniform1i"),
-    uniform1f: record("uniform1f"),
-    uniform2f: record("uniform2f"),
-    uniform3f: record("uniform3f"),
+    getUniformLocation: (_program: unknown, name: string) => ({ name }),
+    // Record uniform writes with their target name and values so tests can
+    // assert specific uniforms (e.g. u_maskMode, the chrome uniforms).
+    uniform1i: recordUniform("uniform1i", calls),
+    uniform1f: recordUniform("uniform1f", calls),
+    uniform2f: recordUniform("uniform2f", calls),
+    uniform3f: recordUniform("uniform3f", calls),
+    uniform4f: recordUniform("uniform4f", calls),
     uniform1fv: record("uniform1fv"),
     viewport: record("viewport"),
     disable: record("disable"),
@@ -104,6 +108,12 @@ function createStubGl() {
       name === "WEBGL_lose_context" ? { loseContext: record("loseContext") } : null,
   });
   return { gl: gl as unknown as WebGL2RenderingContext, calls };
+}
+
+function recordUniform(name: string, calls: string[]) {
+  return (location: { name?: string } | null, ...values: number[]) => {
+    calls.push(`${name}:${location?.name ?? "?"}=${values.join(",")}`);
+  };
 }
 
 function createStubCanvas(gl: WebGL2RenderingContext | null): HTMLCanvasElement {
@@ -185,6 +195,27 @@ describe("shader sources", () => {
       "u_radius",
       "u_ratio",
       "u_chromaScale",
+      "u_maskMode",
+      "u_alphaDistRange",
+      "u_tintColor",
+      "u_borderColor",
+      "u_borderWidth",
+      "u_highlightColor",
+      "u_highlightStrength",
+      "u_lightDir",
+      "u_highlightSpread",
+      "u_highlightCore",
+      "u_highlightAniso",
+      "u_glassLensCount",
+      "u_glassLensRect",
+      "u_glowColor",
+      "u_glowAnchor",
+      "u_glowRadii",
+      "u_glowRotation",
+      "u_saturation",
+      "u_shadowColor",
+      "u_shadowOffset",
+      "u_shadowBlur",
     ]) {
       expect(GLASS_FRAGMENT_SHADER_SOURCE).toContain(`uniform`);
       expect(GLASS_FRAGMENT_SHADER_SOURCE).toContain(uniform);
@@ -238,6 +269,121 @@ describe("createWebglGlassRenderer", () => {
     expect(calls.filter((name) => name === "drawArrays").length).toBeGreaterThanOrEqual(2);
     // Scene and map textures uploaded.
     expect(calls.filter((name) => name === "texImage2D").length).toBeGreaterThanOrEqual(2);
+    renderer?.destroy();
+  });
+
+  it("sets u_maskMode to 1 for map coverage and 0 for the rect mask", () => {
+    const { gl, calls } = createStubGl();
+    const canvas = createStubCanvas(gl);
+    const renderer = createWebglGlassRenderer(canvas);
+
+    // Non-square merged map: upload path uses map.width/height directly.
+    const map: DisplacementMap = {
+      width: 8,
+      height: 4,
+      rgba: new Uint8ClampedArray(8 * 4 * 4).fill(128),
+    };
+    renderer?.render(makeDrawInput({ map, maskMode: "map" }));
+    expect(calls).toContain("uniform1i:u_maskMode=1");
+
+    renderer?.render(makeDrawInput());
+    expect(calls).toContain("uniform1i:u_maskMode=0");
+    renderer?.destroy();
+  });
+
+  it("sets the chrome uniforms from the draw input in map mode", () => {
+    const { gl, calls } = createStubGl();
+    const canvas = createStubCanvas(gl);
+    const renderer = createWebglGlassRenderer(canvas);
+
+    renderer?.render(
+      makeDrawInput({
+        maskMode: "map",
+        alphaDistRange: 24,
+        lensRects: [
+          { x: 30, y: 40, halfW: 30, halfH: 30 },
+          { x: 90, y: 40, halfW: 20, halfH: 25 },
+        ],
+        chrome: {
+          tint: [0.1, 0.2, 0.3, 0.4],
+          border: [0.5, 0.6, 0.7, 0.8],
+          borderWidth: 1.5,
+          highlight: [1, 0.9, 0.8],
+          highlightStrength: 0.35,
+          lightDir: [0, -1],
+          highlightSpread: 0.68,
+          highlightCore: 0.36,
+          highlightAniso: [1.16, 0.74],
+          glowColor: [1, 0.95, 0.9, 0.62],
+          glowAnchor: [0.24, -0.2],
+          glowRadii: [1.16, 0.74],
+          glowRotation: -0.1745,
+          saturation: 1.22,
+          shadowColor: [0, 0.1, 0.2, 0.28],
+          shadowOffset: [0, 11],
+          shadowBlur: 29,
+        },
+      }),
+    );
+
+    expect(calls).toContain("uniform1i:u_maskMode=1");
+    expect(calls).toContain("uniform1f:u_alphaDistRange=24");
+    expect(calls).toContain("uniform4f:u_tintColor=0.1,0.2,0.3,0.4");
+    expect(calls).toContain("uniform4f:u_borderColor=0.5,0.6,0.7,0.8");
+    expect(calls).toContain("uniform1f:u_borderWidth=1.5");
+    expect(calls).toContain("uniform3f:u_highlightColor=1,0.9,0.8");
+    expect(calls).toContain("uniform1f:u_highlightStrength=0.35");
+    expect(calls).toContain("uniform2f:u_lightDir=0,-1");
+    expect(calls).toContain("uniform1f:u_highlightSpread=0.68");
+    expect(calls).toContain("uniform1f:u_highlightCore=0.36");
+    expect(calls).toContain("uniform2f:u_highlightAniso=1.16,0.74");
+    // Interior glow: per-lens rects (center + half size) and glow params.
+    expect(calls).toContain("uniform1i:u_glassLensCount=2");
+    expect(calls).toContain("uniform4f:u_glassLensRect[0]=30,40,30,30");
+    expect(calls).toContain("uniform4f:u_glassLensRect[1]=90,40,20,25");
+    expect(calls).toContain("uniform4f:u_glassLensRect[2]=0,0,0,0");
+    expect(calls).toContain("uniform4f:u_glassLensRect[3]=0,0,0,0");
+    expect(calls).toContain("uniform4f:u_glowColor=1,0.95,0.9,0.62");
+    expect(calls).toContain("uniform2f:u_glowAnchor=0.24,-0.2");
+    expect(calls).toContain("uniform2f:u_glowRadii=1.16,0.74");
+    expect(calls).toContain("uniform1f:u_glowRotation=-0.1745");
+    expect(calls).toContain("uniform1f:u_saturation=1.22");
+    expect(calls).toContain("uniform4f:u_shadowColor=0,0.1,0.2,0.28");
+    expect(calls).toContain("uniform2f:u_shadowOffset=0,11");
+    expect(calls).toContain("uniform1f:u_shadowBlur=29");
+    renderer?.destroy();
+  });
+
+  it("defaults chrome uniforms to inert no-ops in rect mode", () => {
+    const { gl, calls } = createStubGl();
+    const canvas = createStubCanvas(gl);
+    const renderer = createWebglGlassRenderer(canvas);
+
+    renderer?.render(makeDrawInput());
+
+    expect(calls).toContain("uniform1i:u_maskMode=0");
+    // Zero alphas / zero strength / saturation 1 make the chrome a no-op in
+    // the shader (the rect-mask output stays bit-identical to pre-chrome).
+    expect(calls).toContain(`uniform1f:u_alphaDistRange=${MERGED_ALPHA_DISTANCE_RANGE}`);
+    expect(calls).toContain("uniform4f:u_tintColor=0,0,0,0");
+    expect(calls).toContain("uniform4f:u_borderColor=0,0,0,0");
+    expect(calls).toContain("uniform1f:u_borderWidth=0");
+    expect(calls).toContain("uniform1f:u_highlightStrength=0");
+    expect(calls).toContain("uniform2f:u_lightDir=0,-1");
+    expect(calls).toContain("uniform1f:u_highlightSpread=0");
+    expect(calls).toContain("uniform1f:u_highlightCore=0");
+    expect(calls).toContain("uniform2f:u_highlightAniso=1,1");
+    // Interior glow stays inert: no lens rects, transparent glow color.
+    expect(calls).toContain("uniform1i:u_glassLensCount=0");
+    expect(calls).toContain("uniform4f:u_glassLensRect[0]=0,0,0,0");
+    expect(calls).toContain("uniform4f:u_glowColor=0,0,0,0");
+    expect(calls).toContain("uniform2f:u_glowAnchor=0.5,0.5");
+    expect(calls).toContain("uniform2f:u_glowRadii=1,1");
+    expect(calls).toContain("uniform1f:u_glowRotation=0");
+    expect(calls).toContain("uniform1f:u_saturation=1");
+    expect(calls).toContain("uniform4f:u_shadowColor=0,0,0,0");
+    expect(calls).toContain("uniform2f:u_shadowOffset=0,0");
+    expect(calls).toContain("uniform1f:u_shadowBlur=0");
     renderer?.destroy();
   });
 

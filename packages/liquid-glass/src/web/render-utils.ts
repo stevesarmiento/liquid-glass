@@ -1,3 +1,4 @@
+import { MERGED_ALPHA_DISTANCE_RANGE } from "../engine/merged";
 import type { DisplacementMap, LensParams } from "../engine/types";
 
 /**
@@ -188,6 +189,44 @@ export function sampleGlassChannel(input: GlassSampleInput, channel: 0 | 1 | 2):
     (input.lensY + input.localY + mapDy * chromaScale) * pixelRatio,
     channel,
   );
+}
+
+/**
+ * Bilinearly samples the merged map's alpha channel and decodes the signed
+ * distance it encodes (`alpha = 0.5 - d / (2 * distRange)`; d < 0 inside the
+ * blob, in region CSS px). CPU mirror of the WebGL shader's alpha-SDF decode.
+ */
+export function sampleMapDistance(
+  map: DisplacementMap,
+  localX: number,
+  localY: number,
+  lensWidth: number,
+  lensHeight: number,
+  distRange: number = MERGED_ALPHA_DISTANCE_RANGE,
+): number {
+  const mapX = (localX / lensWidth) * map.width - 0.5;
+  const mapY = (localY / lensHeight) * map.height - 0.5;
+  const alpha = sampleImageChannel(map.rgba, map.width, map.height, mapX, mapY, 3) / 255;
+
+  return (0.5 - alpha) * (2 * distRange);
+}
+
+/**
+ * Blob coverage (0..1) at a lens-local CSS position, rebuilt from the
+ * alpha-encoded signed distance with a crisp ~1px antialiased edge — NOT the
+ * raw alpha ramp, which now spans the full ±distRange band. CPU mirror of the
+ * WebGL shader's `u_maskMode == 1` mask.
+ */
+export function sampleMapCoverage(
+  map: DisplacementMap,
+  localX: number,
+  localY: number,
+  lensWidth: number,
+  lensHeight: number,
+): number {
+  const d = sampleMapDistance(map, localX, localY, lensWidth, lensHeight);
+
+  return Math.min(1, Math.max(0, 0.5 - d));
 }
 
 export function specularAlpha(map: DisplacementMap, localX: number, localY: number, lensWidth: number, lensHeight: number): number {

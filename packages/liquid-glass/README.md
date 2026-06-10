@@ -77,6 +77,51 @@ export function Example() {
 }
 ```
 
+`LiquidGlass` also passes the multi-lens "liquid blend" controller options
+through: `lenses` (two or more entries merge into one metaball blob — this
+needs a pixel-readable scene, so set `sourceImageUrl`), `blend` (smooth-union
+distance in px, default 40), `tint` (shader-drawn chrome for merged mode), and
+`controllerRef` for imperative access to the underlying controller — use
+`setLensPosition` as a drag fast path that skips React re-renders. See
+[Multiple lenses (liquid blend)](#multiple-lenses-liquid-blend) for the full
+semantics.
+
+```tsx
+import { useRef } from "react";
+import { LiquidGlass, type LiquidGlassController } from "liquid-glass/react";
+
+export function MergedExample() {
+  const controllerRef = useRef<LiquidGlassController | null>(null);
+
+  // rAF-batched fast path: drag the second circle without re-rendering React.
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    controllerRef.current?.setLensPosition(1, {
+      x: (event.clientX - rect.left) / rect.width,
+      y: (event.clientY - rect.top) / rect.height,
+    });
+  };
+
+  return (
+    <div onPointerMove={onPointerMove}>
+      <LiquidGlass
+        sourceImageUrl="/scene.jpg" // merged rendering refracts this image
+        lens={{ width: 120, height: 120, radius: 60 }} // shared optics + defaults
+        blend={40}
+        tint="aqua"
+        lenses={[
+          { position: { x: 0.35, y: 0.5 } },
+          { position: { x: 0.65, y: 0.5 }, width: 80, height: 80, radius: 40 },
+        ]}
+        controllerRef={controllerRef}
+      >
+        <img src="/scene.jpg" alt="" style={{ display: "block", width: "100%" }} />
+      </LiquidGlass>
+    </div>
+  );
+}
+```
+
 `LiquidGlass` is the scene-level wrapper. For design-system primitives such as slider thumbs, switch knobs, and buttons, use `GlassNode` and `GlassSurface`:
 
 ```tsx
@@ -123,6 +168,92 @@ const controller = createLiquidGlassController({
 controller.setPosition({ x: 0.5, y: 0.5 }); // batched, applied next frame
 controller.destroy(); // cancels pending frames, disconnects observers
 ```
+
+### Multiple lenses (liquid blend)
+
+Passing two or more entries in `lenses` (up to 4) renders them as one merged
+"liquid blend" blob: per-lens rounded-rect SDFs are joined with a smooth union
+(`blend`, in px) and a single merged displacement map covers the lenses'
+bounding region. The map's alpha channel encodes a signed-distance band
+around the blob edge (`alpha = 0.5 - d / (2 * MERGED_ALPHA_DISTANCE_RANGE)`,
+exported from the root), which the renderers decode back into a crisp
+antialiased mask — and which the WebGL shader also uses to draw the glass
+**chrome** (backdrop saturation, tint fill, a per-lens interior highlight
+glow, border band, an angular-profile rim highlight, and a drop shadow
+composited under the blob) directly from the merged SDF, so the chrome merges
+with the metaball instead of being separate DOM circles.
+
+```ts
+const controller = createLiquidGlassController({
+  container,
+  source,
+  target,
+  mode: "target",
+  sourceImageUrl: "/scene.jpg", // required for merged rendering
+  lens: { width: 120, height: 120, radius: 40 }, // shared optics + defaults
+  blend: 40, // smooth-union distance in px (default 40)
+  tint: "aqua", // chrome drawn by the shader from the merged SDF
+  lenses: [
+    { position: { x: 0.35, y: 0.5 } },
+    { position: { x: 0.65, y: 0.5 }, width: 80, height: 80, radius: 28 },
+  ],
+});
+
+// Fast per-lens drag path, rAF-batched like setPosition.
+controller.setLensPosition(1, { x: 0.7, y: 0.55 });
+```
+
+Constraints and behavior:
+
+- Merged mode needs a pixel-readable scene, so it always renders through the
+  WebGL/canvas overlay: with `renderer: "auto"` (or `"webgl"`) it prefers
+  WebGL on **all** browsers (not just Safari) and falls back to the CPU canvas
+  when WebGL2 is unavailable. With `renderer: "svg"` or without
+  `sourceImageUrl`, merged rendering is impossible — the controller warns once
+  (dev only) and renders only the first lens through the regular single-lens
+  path.
+- Perf: the merged map is cached by a key that quantizes lens offsets
+  _relative to the first lens_ to 1px, so a static blob — or the whole group
+  translating together — reuses the cached map. Dragging one lens relative to
+  the others regenerates the map each (rAF-batched) frame; keep `lens.mapSize`
+  moderate if that matters.
+- A single `lenses` entry behaves exactly like `position` plus the optional
+  per-lens `width`/`height`/`radius` overrides; `setLensPosition(0, ...)` also
+  works in plain single-lens mode as an alias of `setPosition`.
+- `tint` accepts a preset name, a `GlassTintInput`, or a resolved `GlassTint`
+  (same as the React components). The controller derives the chrome from it:
+  fill from `background`, a 1.5px border from `border`, rim highlight color
+  and strength from `highlight` (its alpha, floored at a subtle 0.18 so
+  presets with transparent highlights still catch light at the top), the lobe
+  shape from `highlightSpread`/`highlightCore`/`highlightWidth`/
+  `highlightHeight`, the light direction from the highlight position rotated
+  by `highlightRotation` (defaulting to top light), backdrop saturation from
+  `saturation` (the CSS chrome's `backdrop-filter: saturate(...)`,
+  reproduced in-shader), and a drop shadow from `shadow`. The `highlight`
+  also drives a per-lens **interior glow** — the reference CSS chrome's
+  `radial-gradient(ellipse W H at X Y, HL 0%, HL core, transparent spread)`
+  background layer plus its blurred `::before` hot-spot — anchored at
+  (`highlightX`, `highlightY`) and sized (`highlightWidth`,
+  `highlightHeight`) as fractions of each lens box, with the same
+  core/spread stops and the hot-spot rotated by `highlightRotation`; its
+  alpha is `highlightOpacity` directly (no 0.18 floor — preset tints with
+  transparent highlights get no interior wash). The glow is composited over
+  the tint fill, under the border, and masked by the blob. The shadow's
+  geometry mirrors the reference CSS chrome's `box-shadow: 0 18px 48px`,
+  scaled uniformly so offset + blur fit inside the map's
+  ±`MERGED_ALPHA_DISTANCE_RANGE` (40px) alpha band — beyond it the decoded
+  distance saturates and the shadow would clip. Parsed colors are cached per
+  tint, and `parseCssColor` (rgb/rgba/#hex → 0..1 RGBA floats) is exported.
+  Known divergences: the CPU canvas fallback draws the same saturation +
+  fill + interior glow (both lobes) + border + drop shadow but shades the
+  border flat (no rim highlight); the shader rim highlight is an angular
+  lobe — visually close to, but not pixel-exact with, the CSS chrome's
+  border catch-light; and the interior glow's hot-spot approximates the CSS
+  `blur(10px)` by widening the core→spread fade band rather than a true
+  Gaussian (its mask uses the farthest-corner ellipse radii,
+  √2 × the `::before` half-extents).
+  Single-lens paths ignore `tint` entirely (style your own overlay as
+  before).
 
 ## Renderers
 

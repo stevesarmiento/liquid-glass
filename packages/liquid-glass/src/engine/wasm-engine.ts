@@ -1,9 +1,18 @@
+import { normalizeLensParams } from "./defaults";
+import { generateMergedDisplacementMap } from "./merged";
 import { createTsLiquidGlassEngine } from "./ts-engine";
-import type { GeometryInput, LensGeometry, LensParams, LiquidGlassEngine } from "./types";
+import type {
+  GeometryInput,
+  LensGeometry,
+  LensParams,
+  LiquidGlassEngine,
+  MergedMapInput,
+} from "./types";
 
 interface WasmModule {
   default(input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module): Promise<unknown>;
   generateDisplacementMap(params: Partial<LensParams>): Uint8Array;
+  generateMergedDisplacementMap(input: MergedMapInput): Uint8Array;
   computeLensGeometry(input: GeometryInput): unknown;
 }
 
@@ -47,6 +56,19 @@ export function createWasmLiquidGlassEngine(): LiquidGlassEngine {
         rgba: new Uint8ClampedArray(rgba),
       };
     },
+    generateMergedDisplacementMap(input) {
+      // Delegate to TS while the wasm module loads, and for the empty-lenses
+      // case so the canonical Error is thrown.
+      if (!wasmModule || input.lenses.length === 0) {
+        return generateMergedDisplacementMap(input);
+      }
+      const { width, height } = mergedMapDimensions(input);
+      const rgba = wasmModule.generateMergedDisplacementMap(input);
+      if (rgba.length !== width * height * 4) {
+        return generateMergedDisplacementMap(input);
+      }
+      return { width, height, rgba: new Uint8ClampedArray(rgba) };
+    },
     computeLensGeometry(input) {
       if (!wasmModule) return fallback.computeLensGeometry(input);
       const result = wasmModule.computeLensGeometry(input);
@@ -56,6 +78,20 @@ export function createWasmLiquidGlassEngine(): LiquidGlassEngine {
       return result;
     },
   };
+}
+
+/**
+ * Mirrors the map sizing in merged.ts/merged.rs: longest side = mapSize,
+ * the other side scaled by the region aspect (min 8).
+ */
+function mergedMapDimensions(input: MergedMapInput): { width: number; height: number } {
+  const mapSize = normalizeLensParams(input.lens).mapSize;
+  const regionWidth = Math.max(1, input.regionWidth);
+  const regionHeight = Math.max(1, input.regionHeight);
+  if (regionWidth >= regionHeight) {
+    return { width: mapSize, height: Math.max(8, Math.round((mapSize * regionHeight) / regionWidth)) };
+  }
+  return { width: Math.max(8, Math.round((mapSize * regionWidth) / regionHeight)), height: mapSize };
 }
 
 function isValidGeometry(value: unknown): value is LensGeometry {
@@ -81,8 +117,8 @@ async function loadWasmModule(): Promise<WasmModule> {
 function warnLoadFailureOnce(error: unknown): void {
   if (warnedLoadFailure) return;
   warnedLoadFailure = true;
-  const env =
-    typeof process !== "undefined" && process.env ? process.env.NODE_ENV : undefined;
+  const env = (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
+    ?.NODE_ENV;
   if (env === "production" || env === "test") return;
   if (typeof console !== "undefined") {
     console.warn(

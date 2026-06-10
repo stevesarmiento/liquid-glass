@@ -72,6 +72,11 @@ export default function GlassSliderPage() {
       <div>
         <h1>Glass Slider</h1>
         <p>Range input with a glass thumb node powered by the liquid-glass primitives.</p>
+        <p>
+          The thumb currently renders single-lens glass through the library's GlassNode primitive;
+          its glass is customizable per instance via the glassLens (lens optics) and glassTint
+          (chrome tint) props.
+        </p>
       </div>
 
       <PreviewContainer>

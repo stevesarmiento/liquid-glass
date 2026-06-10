@@ -10,11 +10,13 @@ declare module "#wasm" {
   export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly generateDisplacementMap: (a: unknown) => [number, number, number];
+    readonly generateMergedDisplacementMap: (a: unknown) => [number, number, number];
     readonly computeLensGeometry: (a: unknown) => [number, number, number];
   }
 
   export function computeLensGeometry(input: unknown): unknown;
   export function generateDisplacementMap(params: unknown): Uint8Array;
+  export function generateMergedDisplacementMap(input: unknown): Uint8Array;
   export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
 
   export default function init(

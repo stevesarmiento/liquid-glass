@@ -1,6 +1,7 @@
 pub mod geometry;
 pub mod lens;
 pub mod map;
+pub mod merged;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
@@ -11,6 +12,7 @@ pub use geometry::{
 };
 pub use lens::{normalize_lens_params, LensParams, PartialLensParams};
 pub use map::{generate_displacement_map, DisplacementMap};
+pub use merged::{generate_merged_displacement_map, smooth_min, MergedLensShape, MergedMapInput};
 
 #[cfg(all(test, target_arch = "wasm32"))]
 mod wasm_tests {
