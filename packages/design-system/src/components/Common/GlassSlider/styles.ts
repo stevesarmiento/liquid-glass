@@ -90,17 +90,30 @@ export const Fill = styled.span`
   border-radius: inherit;
 `;
 
-export const Lens = styled.span<{ $active?: boolean }>`
-  --lgds-slider-lens-active-duration: 320ms;
-  --lgds-slider-lens-ease: cubic-bezier(0.22, 1.15, 0.36, 1.06);
-  --lgds-slider-lens-rest-duration: 520ms;
-
+/**
+ * Owns the lens position and exposes a transform that no stylesheet rule ever
+ * writes to: the material-deformation rAF loop sets transform/transform-origin
+ * inline per frame. Keeping it free of CSS transitions is what lets the
+ * imperative writes land without the browser chasing them.
+ */
+export const LensDeform = styled.span`
   position: absolute;
   top: var(--lgds-slider-lens-top);
   left: var(--lgds-slider-lens-left);
   z-index: 2;
   width: var(--lgds-slider-lens-width);
   height: var(--lgds-slider-lens-height);
+  overflow: visible;
+  pointer-events: none;
+`;
+
+export const Lens = styled.span<{ $active?: boolean }>`
+  --lgds-slider-lens-active-duration: 320ms;
+  --lgds-slider-lens-ease: cubic-bezier(0.22, 1.15, 0.36, 1.06);
+  --lgds-slider-lens-rest-duration: 520ms;
+
+  position: absolute;
+  inset: 0;
   overflow: visible;
   pointer-events: none;
   background: transparent;

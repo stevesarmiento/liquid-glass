@@ -42,6 +42,14 @@ export interface GlassSwitchProps
   glassSurfaceBlur?: number | string;
   /** Dynamic tint forwarded to the glass thumb node. */
   glassTint?: GlassTintName | GlassTintInput | GlassTint;
+  /**
+   * Enables the liquid material deformation: dragging the knob past the
+   * on/off ends stretches it with rubberband resistance and releasing it
+   * bounces back through an underdamped spring. Keyboard interactions never
+   * deform, and `prefers-reduced-motion: reduce` disables it regardless of
+   * this prop. Defaults to true.
+   */
+  materialDeformation?: boolean;
   /** Engine mode forwarded to liquid-glass. */
   engineMode?: LiquidGlassEngineMode;
   /** Renderer mode forwarded to liquid-glass. */

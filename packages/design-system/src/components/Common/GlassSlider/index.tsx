@@ -11,7 +11,13 @@ import {
   useState
 } from "react";
 import { type GlassCanvasSource, type LensParams } from "liquid-glass";
-import { GlassNode } from "liquid-glass/react";
+import {
+  GlassNode,
+  createGlassPointerVelocityTracker,
+  useGlassDeformation,
+  useGlassPress,
+  type GlassPointerVelocityTracker
+} from "liquid-glass/react";
 
 import {
   Control,
@@ -20,6 +26,7 @@ import {
   Input,
   LabelText,
   Lens,
+  LensDeform,
   LensSourceBackground,
   Rail,
   SliderContainer,
@@ -43,6 +50,9 @@ const DEFAULT_MIN = 0;
 const DEFAULT_MAX = 100;
 const DEFAULT_STEP = 1;
 const KEYBOARD_ACTIVE_RELEASE_MS = 320;
+const DEFORMATION_MAX_PX = 10;
+const DEFORMATION_FALLOFF_PX = 80;
+const DEFORMATION_LAG_MAX_PX = 4;
 const DEFAULT_SLIDER_OPTICS: Omit<LensParams, "width" | "height" | "radius"> = {
   scaleX: 38,
   scaleY: 38,
@@ -111,6 +121,8 @@ const GlassSlider = ({
   glassTint,
   id,
   label,
+  materialDeformation = true,
+  materialLag = true,
   max = DEFAULT_MAX,
   min = DEFAULT_MIN,
   onBlur,
@@ -141,15 +153,22 @@ const GlassSlider = ({
   const inputId = id ?? generatedId;
   const controlRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const deformRef = useRef<HTMLSpanElement>(null);
+  const velocityTrackerRef = useRef<GlassPointerVelocityTracker | null>(null);
+  if (velocityTrackerRef.current === null) {
+    velocityTrackerRef.current = createGlassPointerVelocityTracker();
+  }
   const skipDispatchedInputRef = useRef(false);
-  const keyboardReleaseTimerRef = useRef<number | null>(null);
   const isControlled = value !== undefined;
   const initialValue = defaultValue ?? min;
   const currentValueRef = useRef(initialValue);
   const [uncontrolledValue, setUncontrolledValue] = useState(initialValue);
   const [controlSize, setControlSize] = useState({ height: 0, width: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [isKeyboardEngaged, setIsKeyboardEngaged] = useState(false);
+  // Keyboard engagement (pressed + 320ms post-release hold) comes from the
+  // material press state machine; the slider drives it imperatively, so the
+  // press tween is skipped (only the boolean is consumed).
+  const keyboardPress = useGlassPress({ holdMs: KEYBOARD_ACTIVE_RELEASE_MS, tween: false });
   const currentValue = isControlled ? value : uncontrolledValue;
   currentValueRef.current = currentValue;
 
@@ -161,7 +180,15 @@ const GlassSlider = ({
     ...sizePreset.lens,
     ...glassLens
   };
-  const isGlassActive = !disabled && (isDragging || isKeyboardEngaged);
+  const isGlassActive = !disabled && (isDragging || keyboardPress.pressed);
+  const deformation = useGlassDeformation(deformRef, {
+    enabled: materialDeformation && !disabled,
+    sizePx: lens.width,
+    maxPx: DEFORMATION_MAX_PX,
+    falloffPx: DEFORMATION_FALLOFF_PX,
+    lagEnabled: materialLag,
+    lagMaxPx: DEFORMATION_LAG_MAX_PX
+  });
   const formattedValue = valueFormatter ? valueFormatter(currentValue) : currentValue;
   const formattedValueText =
     valueFormatter && (typeof formattedValue === "string" || typeof formattedValue === "number")
@@ -242,7 +269,12 @@ const GlassSlider = ({
 
     const rect = control.getBoundingClientRect();
     const travel = Math.max(1, rect.width - lens.width);
-    const pointerRatio = clamp((clientX - rect.left - lens.width / 2) / travel, 0, 1);
+    const pointerOffset = clientX - rect.left - lens.width / 2;
+    const pointerRatio = clamp(pointerOffset / travel, 0, 1);
+    // Signed px past the thumb's clamp point: negative pulls past min,
+    // positive pulls past max, 0 anywhere inside the travel range.
+    const overshootPx = pointerOffset < 0 ? pointerOffset : pointerOffset > travel ? pointerOffset - travel : 0;
+    deformation.setPull(overshootPx, velocityTrackerRef.current?.sample(clientX));
     const nextValue = snapValueToStep(min + pointerRatio * (max - min), min, max, step);
 
     if (applyValue(nextValue)) dispatchInputChange(nextValue);
@@ -264,35 +296,11 @@ const GlassSlider = ({
     return () => resizeObserver.disconnect();
   }, []);
 
-  useEffect(
-    () => () => {
-      if (keyboardReleaseTimerRef.current) {
-        window.clearTimeout(keyboardReleaseTimerRef.current);
-      }
-    },
-    []
-  );
-
-  const holdKeyboardEngagement = () => {
-    setIsKeyboardEngaged(true);
-
-    if (keyboardReleaseTimerRef.current) {
-      window.clearTimeout(keyboardReleaseTimerRef.current);
-    }
-
-    keyboardReleaseTimerRef.current = window.setTimeout(() => {
-      setIsKeyboardEngaged(false);
-      keyboardReleaseTimerRef.current = null;
-    }, KEYBOARD_ACTIVE_RELEASE_MS);
-  };
-
-  const releaseKeyboardEngagement = () => {
-    if (keyboardReleaseTimerRef.current) {
-      window.clearTimeout(keyboardReleaseTimerRef.current);
-      keyboardReleaseTimerRef.current = null;
-    }
-    setIsKeyboardEngaged(false);
-  };
+  useEffect(() => {
+    // Drop any in-flight deformation (and its inline transform) if the
+    // slider is disabled mid-drag or the feature is switched off.
+    if (disabled || !materialDeformation) deformation.cancel();
+  }, [deformation, disabled, materialDeformation]);
 
   const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (event) => {
     const isValueKey =
@@ -305,7 +313,7 @@ const GlassSlider = ({
       event.key === "PageUp" ||
       event.key === "PageDown";
 
-    if (!disabled && isValueKey) holdKeyboardEngagement();
+    if (!disabled && isValueKey) keyboardPress.holdRelease();
     onKeyDown?.(event);
   };
 
@@ -321,6 +329,7 @@ const GlassSlider = ({
     event.preventDefault();
     inputRef.current?.focus({ preventScroll: true });
     setIsDragging(true);
+    velocityTrackerRef.current?.reset();
     updateValueFromPointer(event.clientX);
     safeSetPointerCapture(event.currentTarget, event.pointerId);
     onPointerDown?.(event as never);
@@ -335,24 +344,28 @@ const GlassSlider = ({
 
   const handlePointerUp: PointerEventHandler<HTMLSpanElement> = (event) => {
     setIsDragging(false);
+    deformation.release();
     safeReleasePointerCapture(event.currentTarget, event.pointerId);
     onPointerUp?.(event as never);
   };
 
   const handlePointerCancel: PointerEventHandler<HTMLSpanElement> = (event) => {
     setIsDragging(false);
+    deformation.release();
     safeReleasePointerCapture(event.currentTarget, event.pointerId);
     onPointerCancel?.(event as never);
   };
 
   const handleBlur: InputHTMLAttributes<HTMLInputElement>["onBlur"] = (event) => {
     setIsDragging(false);
-    releaseKeyboardEngagement();
+    deformation.release();
+    keyboardPress.cancel();
     onBlur?.(event);
   };
 
   const handleLostPointerCapture: PointerEventHandler<HTMLSpanElement> = (event) => {
     setIsDragging(false);
+    deformation.release();
     onLostPointerCapture?.(event as never);
   };
 
@@ -398,34 +411,41 @@ const GlassSlider = ({
       >
         <Rail aria-hidden="true">
           <SliderVisual inert />
-          <Lens $active={isGlassActive}>
-            {canRenderGlass ? (
-              <GlassNode
-                className={glassNodeClassName}
-                contentClassName={glassContentClassName}
-                drawSource={drawSource}
-                engineMode={engineMode}
-                lens={lens}
-                lensX={lensSourceX}
-                lensY={lensGeometry.lensY}
-                renderer={renderer}
-                sourceChildren={
-                  <>
-                    <LensSourceBackground />
-                    <SliderVisual inert />
-                  </>
-                }
-                sourceHeight={controlSize.height}
-                sourceWidth={controlSize.width}
-                surfaceClassName={glassSurfaceClassName}
-                surfaceBlur={glassSurfaceBlur}
-                surfaceTone="clear"
-                tint={glassTint}
-              />
-            ) : (
-              <Thumb />
-            )}
-          </Lens>
+          {/*
+            The deformation wrapper owns the lens position; the rAF spring
+            writes transform/transform-origin on it imperatively so the whole
+            lens — refraction canvas included — stretches as one liquid body.
+          */}
+          <LensDeform ref={deformRef}>
+            <Lens $active={isGlassActive}>
+              {canRenderGlass ? (
+                <GlassNode
+                  className={glassNodeClassName}
+                  contentClassName={glassContentClassName}
+                  drawSource={drawSource}
+                  engineMode={engineMode}
+                  lens={lens}
+                  lensX={lensSourceX}
+                  lensY={lensGeometry.lensY}
+                  renderer={renderer}
+                  sourceChildren={
+                    <>
+                      <LensSourceBackground />
+                      <SliderVisual inert />
+                    </>
+                  }
+                  sourceHeight={controlSize.height}
+                  sourceWidth={controlSize.width}
+                  surfaceClassName={glassSurfaceClassName}
+                  surfaceBlur={glassSurfaceBlur}
+                  surfaceTone="clear"
+                  tint={glassTint}
+                />
+              ) : (
+                <Thumb />
+              )}
+            </Lens>
+          </LensDeform>
         </Rail>
         <Input
           {...props}

@@ -126,46 +126,9 @@ export const Lens = styled.span<{ $active?: boolean; $dimmed?: boolean }>`
   }
 `;
 
-/**
- * Press overexposure: a white bloom that flares in with the press tween and
- * decays on release — light blowing out through the glass. Opacity is driven
- * inline by pressProgress, so it shares the optics tween's easing exactly.
- * Sits above the glass material, below the Label (which stacks outside Lens).
- */
-export const ExposureFlash = styled.span`
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  border-radius: inherit;
-  background: radial-gradient(
-    120% 140% at 50% 28%,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(255, 255, 255, 0.55) 55%,
-    rgba(255, 255, 255, 0.3) 100%
-  );
-`;
-
-/**
- * Pointer light: a soft radial glow centered on the cursor, tracked via the
- * --lgds-button-pointer-x/y vars (written imperatively on pointermove — no
- * React renders). Shown only while pressed; opacity is driven inline by the
- * press tween (no CSS transition — it would fight the rAF easing). Keyboard
- * presses fall back to a centered glow via the 50% var defaults.
- */
-export const CursorGlow = styled.span`
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  border-radius: inherit;
-  background: radial-gradient(
-    110px circle at var(--lgds-button-pointer-x, 50%) var(--lgds-button-pointer-y, 50%),
-    rgba(255, 255, 255, 0.34) 0%,
-    rgba(255, 255, 255, 0.1) 46%,
-    transparent 72%
-  );
-`;
+// The press overexposure bloom + cursor-following light moved into the
+// material layer: GlassPressEffects from liquid-glass/react (rendered inside
+// Lens; pointer vars are written by updateGlassPointerLight on the root).
 
 export const LensSourceBackground = styled.span`
   position: absolute;

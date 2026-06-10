@@ -143,6 +143,61 @@ import { GlassNode } from "liquid-glass/react";
 
 For non-React component adapters, use `renderLocalGlassCanvas` from the root package.
 
+### Material behaviors
+
+The glass material's interaction physics are public hooks in
+`liquid-glass/react`, so custom surfaces compose the same feel as the
+design-system components:
+
+- `useGlassPress(options?)` — the press state machine: pressed + post-release
+  hold (default 320ms), a rAF press tween (`progress` 0..1, ease-out cubic,
+  reduced-motion aware), spreadable `handlers` (pointer-capture safety,
+  Space/Enter parity), imperative `press`/`holdRelease`/`releaseIfIdle`/
+  `cancel`, and `boostLens(lens, boost?)` for progress-scaled optics.
+- `useGlassDeformation(ref, options?)` — imperative spring-driven deformation:
+  `setPull(px, velocity?)` tracks stiff (600/38) through a rubberband curve,
+  `release()` bounces back underdamped (380/16), `cancel()` clears. The
+  default "pull" mode stretches from an edge anchor with cross-axis volume
+  conservation; "press" mode compresses around the center (a press squish).
+  Writes `transform` directly per rAF — no React state per frame.
+- `useGlassHoverTint(tint, options?)` — hover as material: a denser, more
+  saturated tint variant instead of a CSS filter.
+- `<GlassPressEffects progress={...} />` — overexposure bloom + cursor light
+  riding the press tween; feed the cursor with
+  `updateGlassPointerLight(el, event)`.
+- `createSpring` / `rubberband` — the pure physics underneath (also exported
+  from the package root).
+
+```tsx
+import { useRef } from "react";
+import { GlassPressEffects, useGlassDeformation, useGlassPress } from "liquid-glass/react";
+
+function PressableGlass() {
+  const ref = useRef<HTMLDivElement>(null);
+  const press = useGlassPress<HTMLDivElement>();
+  const squish = useGlassDeformation(ref, { axis: "y", mode: "press", maxPx: 2, falloffPx: 12 });
+
+  return (
+    <div
+      ref={ref}
+      {...press.handlers}
+      onPointerDown={(e) => {
+        press.handlers.onPointerDown(e);
+        squish.setPull(14);
+      }}
+      onPointerUp={(e) => {
+        press.handlers.onPointerUp(e);
+        squish.release(); // springs back with the material bounce
+      }}
+      style={{ position: "relative", overflow: "hidden", borderRadius: 18 }}
+    >
+      Press me
+      <GlassPressEffects progress={press.progress} />
+    </div>
+  );
+}
+```
+
 ## Controller
 
 `createLiquidGlassController` drives a scene-level lens over arbitrary DOM. It

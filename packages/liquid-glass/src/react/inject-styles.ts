@@ -167,6 +167,47 @@ export const LIQUID_GLASS_STYLES = `.lg-glass-surface {
   display: none;
 }
 
+/* Press visual layer (GlassPressEffects): overexposure bloom + cursor light.
+   Opacity is driven inline by the press tween — no transitions here. */
+.lg-glass-press-effects {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.lg-glass-press-effects > span {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* Overexposure: a white bloom that flares in with the press tween and decays
+   on release — light blowing out through the glass. */
+.lg-glass-press-bloom {
+  background: radial-gradient(
+    120% 140% at 50% 28%,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.55) 55%,
+    rgba(255, 255, 255, 0.3) 100%
+  );
+}
+
+/* Pointer light: a soft radial glow centered on the cursor, tracked via the
+   --lg-glass-pointer-x/y vars (written imperatively by
+   updateGlassPointerLight — no React renders). Keyboard presses fall back to
+   a centered glow via the 50% var defaults. The mid stop keeps the original
+   0.1/0.34 alpha ratio as intensity scales. */
+.lg-glass-press-glow {
+  background: radial-gradient(
+    var(--lg-glass-press-glow-radius, 110px) circle at var(--lg-glass-pointer-x, 50%) var(--lg-glass-pointer-y, 50%),
+    rgba(255, 255, 255, var(--lg-glass-press-glow-intensity, 0.34)) 0%,
+    rgba(255, 255, 255, calc(var(--lg-glass-press-glow-intensity, 0.34) * 0.29412)) 46%,
+    transparent 72%
+  );
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .lg-glass-surface,
   .lg-glass-node__surface.lg-glass-surface {

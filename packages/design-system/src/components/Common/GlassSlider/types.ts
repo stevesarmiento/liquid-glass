@@ -55,6 +55,20 @@ export interface GlassSliderProps
   glassTint?: GlassTintName | GlassTintInput | GlassTint;
   /** Optional frosted background blur in px for the glass thumb surface. Defaults to 0. */
   glassSurfaceBlur?: number | string;
+  /**
+   * Enables the liquid material deformation: dragging past the track ends
+   * stretches the thumb with rubberband resistance and releasing it bounces
+   * back through an underdamped spring. Keyboard interactions never deform,
+   * and `prefers-reduced-motion: reduce` disables it regardless of this prop.
+   * Defaults to true.
+   */
+  materialDeformation?: boolean;
+  /**
+   * Adds a subtle velocity-based stretch while dragging anywhere on the
+   * track (capped at ~40% of the apex deformation) so the material carries a
+   * hint of inertia. Requires `materialDeformation`. Defaults to true.
+   */
+  materialLag?: boolean;
   /** Engine mode forwarded to liquid-glass. */
   engineMode?: LiquidGlassEngineMode;
   /** Renderer mode forwarded to liquid-glass. */

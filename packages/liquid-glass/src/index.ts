@@ -17,6 +17,9 @@ export {
 } from "./engine/merged";
 export { PARITY_TOLERANCE, compareEngineOutput, compareMapBytes } from "./engine/parity";
 export type { ParityResult } from "./engine/parity";
+// Pure material-physics utilities (no DOM, no React) shared with the
+// material-behavior hooks in liquid-glass/react.
+export { createSpring, rubberband, type Spring, type SpringConfig } from "./react/material/spring";
 export { getGlassFilterBleed, getGlassFilterVersion } from "./web/filter-version";
 export { isSafari } from "./web/is-safari";
 export { renderLocalGlassCanvas } from "./web/local-canvas";

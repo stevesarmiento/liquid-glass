@@ -80,6 +80,39 @@ const PROP_ROWS: PropRow[] = [
   },
 ];
 
+const MATERIAL_ROWS: PropRow[] = [
+  {
+    name: "useGlassPress",
+    type: "(options?: GlassPressOptions) => GlassPress",
+    description:
+      "The glass press state machine: pressed state with a post-release hold (holdMs, default 320ms), a rAF press tween (progress 0..1, ease-out cubic, reduced-motion aware), spreadable handlers with pointer-capture safety and Space/Enter parity, imperative press/holdRelease/releaseIfIdle/cancel for custom gestures, and boostLens for progress-scaled optics (scale ×1.15, +0.45 glow by default).",
+  },
+  {
+    name: "useGlassDeformation",
+    type: "(ref, options?: GlassDeformationOptions) => GlassDeformationHandle",
+    description:
+      "Imperative material-deformation driver: a damped spring per rAF writes transform/transform-origin directly on the target — zero React state per frame. setPull(px, velocity?) tracks with a stiff spring (600/38) through a rubberband curve; release() bounces back underdamped (380/16); cancel() clears immediately. mode \"pull\" stretches away from an edge anchor with cross-axis volume conservation; mode \"press\" compresses around the center (a press squish). Honors prefers-reduced-motion and cleans up on unmount.",
+  },
+  {
+    name: "useGlassHoverTint",
+    type: "(tint, options?) => { restingTint, hoverTint }",
+    description:
+      "Hover feedback in the material itself: resolves the tint and derives a denser (+opacityBoost background alpha), more saturated (×saturationScale) hover variant — no CSS filters. Both memoized.",
+  },
+  {
+    name: "GlassPressEffects",
+    type: "component",
+    description:
+      "Optional press visual layer: an overexposure bloom plus a cursor-following light as one absolutely-positioned child. Opacity rides the progress prop inline, so it shares the press tween's easing. Pair with updateGlassPointerLight(el, event) to feed the cursor position as CSS vars with zero re-renders.",
+  },
+  {
+    name: "createSpring / rubberband",
+    type: "pure utilities",
+    description:
+      "The physics underneath: a semi-implicit-Euler damped spring (sub-stepped, background-tab safe) and the iOS-style diminishing-returns pull curve. Also exported from the package root.",
+  },
+];
+
 const Stack = styled.div`
   display: grid;
   gap: 30px;
@@ -106,6 +139,65 @@ export function Example() {
     >
       <img alt="" src="/scene.jpg" />
     </LiquidGlass>
+  );
+}`;
+
+const MATERIAL_EXAMPLE = `import { useRef, useState } from "react";
+import {
+  GlassPressEffects,
+  updateGlassPointerLight,
+  useGlassDeformation,
+  useGlassHoverTint,
+  useGlassPress,
+} from "liquid-glass/react";
+
+// A custom pressable glass chip: press tween + material squish + bloom,
+// using only the liquid-glass material layer.
+export function GlassChip() {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = useState(false);
+
+  const press = useGlassPress<HTMLDivElement>();
+  const squish = useGlassDeformation(surfaceRef, {
+    axis: "y",
+    mode: "press", // centered vertical constriction, cross-axis bulge
+    maxPx: 2,
+    falloffPx: 12,
+  });
+  const { restingTint, hoverTint } = useGlassHoverTint("frost");
+  const tint = hovered ? hoverTint : restingTint;
+
+  return (
+    <div
+      ref={surfaceRef}
+      role="button"
+      tabIndex={0}
+      {...press.handlers}
+      onPointerDown={(event) => {
+        press.handlers.onPointerDown(event);
+        squish.setPull(14); // springs in stiff (600/38)...
+      }}
+      onPointerUp={(event) => {
+        press.handlers.onPointerUp(event);
+        squish.release(); // ...and bounces back underdamped (380/16)
+      }}
+      onPointerMove={(event) => updateGlassPointerLight(event.currentTarget, event)}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      style={{
+        position: "relative",
+        borderRadius: 18,
+        overflow: "hidden",
+        background: tint.background,
+        border: \`1px solid \${tint.border}\`,
+        backdropFilter: \`blur(18px) saturate(\${tint.saturation})\`,
+        padding: "10px 18px",
+      }}
+    >
+      Press me
+      {/* bloom + cursor light ride press.progress's rAF tween */}
+      <GlassPressEffects progress={press.progress} exposure={0.34} />
+    </div>
   );
 }`;
 
@@ -144,6 +236,27 @@ export default function ReactPage() {
           once. The styles they need are injected automatically on first mount; import
           "liquid-glass/styles.css" instead if you need an explicit stylesheet for strict CSP.
         </p>
+      </div>
+
+      <div>
+        <h2>Material behaviors</h2>
+        <p>
+          The interaction physics of the glass material — how it presses, deforms, and lights up —
+          are public, composable hooks, the same way the displacement math is the shared engine.
+          Design-system components (GlassButton, GlassSwitch, GlassSlider) are built from these;
+          any custom surface can compose the same feel.
+        </p>
+        <PropsTable rows={MATERIAL_ROWS} />
+      </div>
+
+      <div>
+        <h2>Composed example</h2>
+        <p>
+          A custom element that presses (tweened optics state), squishes (spring-driven
+          deformation with a release bounce), and blooms (press visual layer) using only
+          liquid-glass:
+        </p>
+        <CodeBlock>{MATERIAL_EXAMPLE}</CodeBlock>
       </div>
     </Stack>
   );

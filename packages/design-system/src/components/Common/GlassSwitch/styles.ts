@@ -104,7 +104,13 @@ export const Fill = styled.span`
   }
 `;
 
-export const Lens = styled.span<{ $active?: boolean }>`
+/**
+ * Owns the lens position/size (and their transitions) while leaving its own
+ * transform untouched by any stylesheet rule: the material-deformation rAF
+ * loop writes transform/transform-origin inline per frame. The duration vars
+ * live here so the nested Lens visuals inherit them.
+ */
+export const LensDeform = styled.span<{ $active?: boolean }>`
   --lgds-switch-lens-active-duration: 320ms;
   --lgds-switch-lens-ease: cubic-bezier(0.22, 1.15, 0.36, 1.06);
   --lgds-switch-lens-rest-duration: 520ms;
@@ -117,6 +123,29 @@ export const Lens = styled.span<{ $active?: boolean }>`
   height: var(--lgds-switch-lens-height);
   overflow: visible;
   pointer-events: none;
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition:
+      width var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      height var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      top var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      left var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease);
+  }
+
+  ${({ $active }) =>
+    $active &&
+    css`
+      @media (prefers-reduced-motion: no-preference) {
+        transition-duration: var(--lgds-switch-lens-active-duration);
+      }
+    `}
+`;
+
+export const Lens = styled.span<{ $active?: boolean }>`
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--lgds-switch-lens-radius);
@@ -126,11 +155,7 @@ export const Lens = styled.span<{ $active?: boolean }>`
     transition:
       background-color var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
       border-color var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-      box-shadow var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-      width var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-      height var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-      top var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-      left var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease);
+      box-shadow var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease);
   }
 
   &::before,

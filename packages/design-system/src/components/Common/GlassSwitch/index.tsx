@@ -11,7 +11,7 @@ import {
   useState
 } from "react";
 import { type GlassCanvasSource, type LensParams } from "liquid-glass";
-import { GlassNode } from "liquid-glass/react";
+import { GlassNode, useGlassDeformation, useGlassPress } from "liquid-glass/react";
 
 import {
   Control,
@@ -19,6 +19,7 @@ import {
   Input,
   LabelText,
   Lens,
+  LensDeform,
   LensSourceBackground,
   Rail,
   SwitchContainer,
@@ -40,6 +41,8 @@ import useGlassTheme from "../../../hooks/useGlassTheme";
 const ACTIVE_RELEASE_MS = 320;
 const ACTIVE_LENS_SCALE = 1.85;
 const DRAG_THRESHOLD_PX = 4;
+const DEFORMATION_MAX_PX = 6;
+const DEFORMATION_FALLOFF_PX = 60;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -65,6 +68,7 @@ const GlassSwitch = ({
   glassTint,
   id,
   label,
+  materialDeformation = true,
   onBlur,
   onChange,
   onCheckedChange,
@@ -91,16 +95,15 @@ const GlassSwitch = ({
   const labelId = label ? `${inputId}-label` : undefined;
   const controlRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const deformRef = useRef<HTMLSpanElement>(null);
   const dragStartXRef = useRef(0);
   const hasDraggedRef = useRef(false);
   const isPointerActiveRef = useRef(false);
-  const releaseTimerRef = useRef<number | null>(null);
   const skipDispatchedChangeRef = useRef(false);
   const suppressClickRef = useRef(false);
   const isControlled = checked !== undefined;
   const [uncontrolledChecked, setUncontrolledChecked] = useState(defaultChecked);
   const [controlSize, setControlSize] = useState({ height: 0, width: 0 });
-  const [isPressed, setIsPressed] = useState(false);
   const [dragRatio, setDragRatio] = useState<number | null>(null);
   const currentChecked = isControlled ? checked : uncontrolledChecked;
   const checkedRatio = currentChecked ? 1 : 0;
@@ -112,13 +115,27 @@ const GlassSwitch = ({
     ...sizePreset.lens,
     ...glassLens
   };
-  const isActive = isPressed || active === true;
+  // The press state machine (pressed + post-release hold) comes from the
+  // material layer; the switch drives it imperatively from its own gesture
+  // handlers, so the tween is skipped (only the boolean is consumed).
+  const press = useGlassPress({
+    forcePressed: active === true,
+    holdMs: ACTIVE_RELEASE_MS,
+    tween: false
+  });
+  const isActive = press.pressed;
   const resolvedControlHeight = controlHeight ?? Math.max(sizePreset.controlHeight, lens.height);
   const resolvedSwitchWidthValue = switchWidth ?? sizePreset.switchWidth;
   const resolvedSwitchWidth =
     typeof resolvedSwitchWidthValue === "number" ? `${resolvedSwitchWidthValue}px` : String(resolvedSwitchWidthValue);
   const resolvedTrackHeight = trackHeight ?? sizePreset.trackHeight;
   const canRenderGlass = !disabled && isActive && controlSize.width > 0 && controlSize.height > 0;
+  const deformation = useGlassDeformation(deformRef, {
+    enabled: materialDeformation && !disabled,
+    sizePx: lens.width,
+    maxPx: DEFORMATION_MAX_PX,
+    falloffPx: DEFORMATION_FALLOFF_PX
+  });
   const lensGeometry = useMemo(() => {
     const availableWidth = Math.max(0, controlSize.width - thumbInsetX * 2);
     const travel = Math.max(0, availableWidth - lens.width);
@@ -175,14 +192,11 @@ const GlassSwitch = ({
     return () => resizeObserver.disconnect();
   }, []);
 
-  useEffect(
-    () => () => {
-      if (releaseTimerRef.current) {
-        window.clearTimeout(releaseTimerRef.current);
-      }
-    },
-    []
-  );
+  useEffect(() => {
+    // Drop any in-flight deformation (and its inline transform) if the
+    // switch is disabled mid-drag or the feature is switched off.
+    if (disabled || !materialDeformation) deformation.cancel();
+  }, [deformation, disabled, materialDeformation]);
 
   const updateHiddenInput = (nextChecked: boolean) => {
     const input = inputRef.current;
@@ -206,29 +220,23 @@ const GlassSwitch = ({
     if (dispatchChange) updateHiddenInput(nextChecked);
   };
 
-  const holdActiveState = () => {
-    setIsPressed(true);
-
-    if (releaseTimerRef.current) {
-      window.clearTimeout(releaseTimerRef.current);
-    }
-
-    releaseTimerRef.current = window.setTimeout(() => {
-      setIsPressed(false);
-      releaseTimerRef.current = null;
-    }, ACTIVE_RELEASE_MS);
-  };
-
-  const getPointerRatio = (clientX: number) => {
+  const getPointerPosition = (clientX: number) => {
     const control = controlRef.current;
-    if (!control) return checkedRatio;
+    if (!control) return { overshootPx: 0, ratio: checkedRatio };
 
     const rect = control.getBoundingClientRect();
     const availableWidth = Math.max(0, rect.width - thumbInsetX * 2);
     const travel = Math.max(1, availableWidth - lens.width);
+    const pointerOffset = clientX - rect.left - thumbInsetX - lens.width / 2;
+    // Signed px past the knob's clamp point: negative pulls past the off end,
+    // positive pulls past the on end, 0 anywhere inside the travel range.
+    const overshootPx =
+      pointerOffset < 0 ? pointerOffset : pointerOffset > travel ? pointerOffset - travel : 0;
 
-    return clamp((clientX - rect.left - thumbInsetX - lens.width / 2) / travel, 0, 1);
+    return { overshootPx, ratio: clamp(pointerOffset / travel, 0, 1) };
   };
+
+  const getPointerRatio = (clientX: number) => getPointerPosition(clientX).ratio;
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextChecked = event.currentTarget.checked;
@@ -247,23 +255,18 @@ const GlassSwitch = ({
       return;
     }
 
-    holdActiveState();
+    press.holdRelease();
     applyChecked(!currentChecked, true);
   };
 
   const handlePointerDown: PointerEventHandler<HTMLButtonElement> = (event) => {
     if (disabled) return;
 
-    if (releaseTimerRef.current) {
-      window.clearTimeout(releaseTimerRef.current);
-      releaseTimerRef.current = null;
-    }
-
     dragStartXRef.current = event.clientX;
     hasDraggedRef.current = false;
     isPointerActiveRef.current = true;
     suppressClickRef.current = false;
-    setIsPressed(true);
+    press.press();
     setDragRatio(null);
 
     safeSetPointerCapture(event.currentTarget, event.pointerId);
@@ -280,7 +283,9 @@ const GlassSwitch = ({
     if (dragDistance >= DRAG_THRESHOLD_PX) {
       hasDraggedRef.current = true;
       suppressClickRef.current = true;
-      setDragRatio(getPointerRatio(event.clientX));
+      const { overshootPx, ratio } = getPointerPosition(event.clientX);
+      deformation.setPull(overshootPx);
+      setDragRatio(ratio);
     }
   };
 
@@ -291,6 +296,7 @@ const GlassSwitch = ({
 
     isPointerActiveRef.current = false;
     setDragRatio(null);
+    deformation.release();
 
     if (isDragGesture) {
       event.preventDefault();
@@ -299,7 +305,7 @@ const GlassSwitch = ({
       applyChecked(nextRatio >= 0.5, true);
     }
 
-    holdActiveState();
+    press.holdRelease();
 
     safeReleasePointerCapture(event.currentTarget, event.pointerId);
 
@@ -309,18 +315,21 @@ const GlassSwitch = ({
   const handlePointerCancel: PointerEventHandler<HTMLButtonElement> = (event) => {
     isPointerActiveRef.current = false;
     suppressClickRef.current = false;
-    setIsPressed(false);
+    press.cancel();
     setDragRatio(null);
+    deformation.release();
     safeReleasePointerCapture(event.currentTarget, event.pointerId);
     onPointerCancel?.(event as never);
   };
 
   const handleLostPointerCapture: PointerEventHandler<HTMLButtonElement> = (event) => {
     isPointerActiveRef.current = false;
+    deformation.release();
 
-    if (!releaseTimerRef.current) {
+    // A completed press keeps its post-release hold; only an interrupted
+    // capture (no hold pending) clears the pressed look immediately.
+    if (press.releaseIfIdle()) {
       suppressClickRef.current = false;
-      setIsPressed(false);
       setDragRatio(null);
     }
 
@@ -328,8 +337,9 @@ const GlassSwitch = ({
   };
 
   const handleBlur: InputHTMLAttributes<HTMLInputElement>["onBlur"] = (event) => {
-    setIsPressed(false);
+    press.cancel();
     setDragRatio(null);
+    deformation.release();
     onBlur?.(event);
   };
 
@@ -366,8 +376,9 @@ const GlassSwitch = ({
         disabled={disabled}
         onBlur={() => {
           isPointerActiveRef.current = false;
-          setIsPressed(false);
+          press.cancel();
           setDragRatio(null);
+          deformation.release();
         }}
         onClick={handleControlClick}
         onKeyDown={onKeyDown}
@@ -383,34 +394,41 @@ const GlassSwitch = ({
       >
         <Rail aria-hidden="true">
           <SwitchVisual inert />
-          <Lens $active={canRenderGlass}>
-            {canRenderGlass ? (
-              <GlassNode
-                className={glassNodeClassName}
-                contentClassName={glassContentClassName}
-                drawSource={drawSource}
-                engineMode={engineMode}
-                lens={{ ...lens, width: renderedLensWidth, height: renderedLensHeight }}
-                lensX={lensSourceX - (renderedLensWidth - lens.width) / 2}
-                lensY={renderedLensY}
-                renderer={renderer}
-                sourceChildren={
-                  <>
-                    <LensSourceBackground />
-                    <SwitchVisual inert />
-                  </>
-                }
-                sourceHeight={controlSize.height}
-                sourceWidth={controlSize.width}
-                surfaceClassName={glassSurfaceClassName}
-                surfaceBlur={glassSurfaceBlur}
-                surfaceTone="clear"
-                tint={glassTint}
-              />
-            ) : (
-              <Thumb />
-            )}
-          </Lens>
+          {/*
+            The deformation wrapper owns the lens position; the rAF spring
+            writes transform/transform-origin on it imperatively so the whole
+            knob — refraction canvas included — stretches as one liquid body.
+          */}
+          <LensDeform $active={canRenderGlass} ref={deformRef}>
+            <Lens $active={canRenderGlass}>
+              {canRenderGlass ? (
+                <GlassNode
+                  className={glassNodeClassName}
+                  contentClassName={glassContentClassName}
+                  drawSource={drawSource}
+                  engineMode={engineMode}
+                  lens={{ ...lens, width: renderedLensWidth, height: renderedLensHeight }}
+                  lensX={lensSourceX - (renderedLensWidth - lens.width) / 2}
+                  lensY={renderedLensY}
+                  renderer={renderer}
+                  sourceChildren={
+                    <>
+                      <LensSourceBackground />
+                      <SwitchVisual inert />
+                    </>
+                  }
+                  sourceHeight={controlSize.height}
+                  sourceWidth={controlSize.width}
+                  surfaceClassName={glassSurfaceClassName}
+                  surfaceBlur={glassSurfaceBlur}
+                  surfaceTone="clear"
+                  tint={glassTint}
+                />
+              ) : (
+                <Thumb />
+              )}
+            </Lens>
+          </LensDeform>
         </Rail>
       </Control>
       {/*

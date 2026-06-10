@@ -5,25 +5,27 @@ import {
   type MouseEventHandler,
   type PointerEventHandler,
   useEffect,
-  useMemo,
   useRef,
   useState
 } from "react";
 import {
-  parseCssColor,
-  resolveGlassTint,
-  withTintBackgroundAlpha,
   type GlassCanvasSource,
   type GlassTintInput,
   type GlassTintName,
   type LensParams
 } from "liquid-glass";
-import { GlassNode } from "liquid-glass/react";
+import {
+  GlassNode,
+  GlassPressEffects,
+  isGlassActivationKey,
+  updateGlassPointerLight,
+  useGlassDeformation,
+  useGlassHoverTint,
+  useGlassPress
+} from "liquid-glass/react";
 
 import {
   ButtonRoot,
-  CursorGlow,
-  ExposureFlash,
   FaceReplica,
   Label,
   Lens,
@@ -43,7 +45,6 @@ import {
   isTransparentCssColor
 } from "../../../lib/canvas";
 import { useGlobalCssOnce } from "../../../lib/globalCss";
-import { safeReleasePointerCapture, safeSetPointerCapture } from "../../../lib/pointer";
 import useGlassTheme from "../../../hooks/useGlassTheme";
 
 const ACTIVE_RELEASE_MS = 320;
@@ -65,58 +66,17 @@ const PRESS_SATURATION_BOOST = 0.9;
 const MAX_SATURATION = 3;
 const PRESS_TWEEN_IN_MS = 150;
 const PRESS_TWEEN_OUT_MS = 260;
-
-const prefersReducedMotion = (): boolean =>
-  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
-
 /**
- * Tweens 0..1 toward the pressed state with rAF so the optics boost is fluid
- * instead of a one-frame map swap. Jumps instantly under reduced motion.
+ * Press squish: the glass face constricts vertically (~2.5% at full press for
+ * the md height) and springs back with the material's release bounce. The
+ * pull depth runs through the deformation rubberband:
+ * rubberband(14, 2, 12) ≈ 1.08px of axis deformation.
  */
-function usePressProgress(pressed: boolean): number {
-  const [progress, setProgress] = useState(pressed ? 1 : 0);
-  const progressRef = useRef(progress);
-  const frameRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const target = pressed ? 1 : 0;
-    if (frameRef.current !== null) {
-      cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    }
-    if (progressRef.current === target) return undefined;
-    if (prefersReducedMotion() || typeof requestAnimationFrame !== "function") {
-      progressRef.current = target;
-      setProgress(target);
-      return undefined;
-    }
-
-    const from = progressRef.current;
-    const duration = target > from ? PRESS_TWEEN_IN_MS : PRESS_TWEEN_OUT_MS;
-    const started = performance.now();
-    const step = (now: number) => {
-      const t = Math.min(1, (now - started) / duration);
-      const value = from + (target - from) * easeOutCubic(t);
-      progressRef.current = value;
-      setProgress(value);
-      frameRef.current = t < 1 ? requestAnimationFrame(step) : null;
-    };
-    frameRef.current = requestAnimationFrame(step);
-
-    return () => {
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
-    };
-  }, [pressed]);
-
-  return progress;
-}
-
-const isActivationKey = (key: string) => key === " " || key === "Enter" || key === "Spacebar";
+const PRESS_SQUISH_PULL_PX = 14;
+const PRESS_SQUISH_MAX_PX = 2;
+const PRESS_SQUISH_FALLOFF_PX = 12;
+/** Gentler-than-default cross-axis bulge so wide buttons don't visibly swell. */
+const PRESS_SQUISH_VOLUME = 0.3;
 
 /** Backdrop images are cached per URL so N buttons share one decode. */
 const backdropImageCache = new Map<string, HTMLImageElement>();
@@ -165,9 +125,8 @@ const GlassButton = ({
   useGlobalCssOnce("lgds-button", buttonGlobalCss);
   const theme = useGlassTheme();
   const controlRef = useRef<HTMLButtonElement>(null);
-  const releaseTimerRef = useRef<number | null>(null);
+  const lensRef = useRef<HTMLSpanElement>(null);
   const [controlSize, setControlSize] = useState({ height: 0, width: 0 });
-  const [isPressed, setIsPressed] = useState(false);
   // Bumped when the backdrop image finishes loading; the new render produces a
   // fresh drawSource closure, which is in GlassNode's draw-effect deps, so the
   // lens repaints with the image without remounting.
@@ -177,7 +136,6 @@ const GlassButton = ({
     ...sizePreset.lens,
     ...glassLens
   };
-  const isActive = isPressed || active === true;
   const isInteractive = !disabled && !loading;
   // The glass face is always on: it renders whenever the button is measured.
   // While disabled or loading, refraction is turned off (GlassNode `disabled`)
@@ -185,17 +143,37 @@ const GlassButton = ({
   // but is dimmed.
   const canRenderGlass = controlSize.width > 0 && controlSize.height > 0;
   const refractGlass = isInteractive;
+  // Press machinery comes from the material layer: pointer/keyboard parity,
+  // pointer-capture safety, the post-release hold, and the rAF press tween.
+  const press = useGlassPress<HTMLButtonElement>({
+    disabled: !isInteractive,
+    forcePressed: active === true,
+    holdMs: ACTIVE_RELEASE_MS,
+    tweenInMs: PRESS_TWEEN_IN_MS,
+    tweenOutMs: PRESS_TWEEN_OUT_MS
+  });
+  const pressProgress = press.progress;
   // Pressing does not remount the lens; it tweens boosted optics from the
   // resting preset so state transitions are fluid (a hard param swap reads as
   // a one-frame refraction snap). The map regenerates per tween frame, which
   // is a short, bounded burst.
-  const pressProgress = usePressProgress(isActive);
-  const lens: LensParams = {
-    ...restingLens,
-    scaleX: restingLens.scaleX * (1 + (PRESSED_OPTICS_SCALE - 1) * pressProgress),
-    scaleY: restingLens.scaleY * (1 + (PRESSED_OPTICS_SCALE - 1) * pressProgress),
-    glow: Math.min(MAX_GLOW, restingLens.glow + PRESSED_GLOW_BOOST * pressProgress)
-  };
+  const lens = press.boostLens(restingLens, {
+    scale: PRESSED_OPTICS_SCALE,
+    glow: PRESSED_GLOW_BOOST,
+    maxGlow: MAX_GLOW
+  });
+  // Press squish: the glass material constricts vertically under the finger
+  // (the label is content ON the glass, so it stays steady above) and bounces
+  // back on release via the shared deformation springs.
+  const squish = useGlassDeformation(lensRef, {
+    enabled: isInteractive,
+    axis: "y",
+    mode: "press",
+    sizePx: controlSize.height || undefined,
+    maxPx: PRESS_SQUISH_MAX_PX,
+    falloffPx: PRESS_SQUISH_FALLOFF_PX,
+    volumeConservation: PRESS_SQUISH_VOLUME
+  });
   // The SVG source replica cannot reproduce the live cover slice (it would
   // need scroll-synced rect measurements), so a backdrop upgrades "auto" to
   // the pixel path: WebGL first, CPU canvas fallback. Explicit choices win.
@@ -216,22 +194,10 @@ const GlassButton = ({
   // (no CSS filter on the button). The surface transitions background-color /
   // backdrop-filter, so the swap is fluid.
   const [isHovered, setIsHovered] = useState(false);
-  const tintKey = typeof effectiveTint === "string" ? effectiveTint : JSON.stringify(effectiveTint);
-  const restingTint = useMemo(
-    () => resolveGlassTint(effectiveTint),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tintKey]
-  );
-  const hoverTint = useMemo(() => {
-    const backgroundAlpha = parseCssColor(restingTint.background)?.[3] ?? 0.1;
-    return {
-      ...withTintBackgroundAlpha(
-        restingTint,
-        Math.min(1, backgroundAlpha + HOVER_TINT_OPACITY_BOOST)
-      ),
-      saturation: Math.min(2.5, restingTint.saturation * HOVER_SATURATION_SCALE)
-    };
-  }, [restingTint]);
+  const { restingTint, hoverTint } = useGlassHoverTint(effectiveTint, {
+    opacityBoost: HOVER_TINT_OPACITY_BOOST,
+    saturationScale: HOVER_SATURATION_SCALE
+  });
   const baseSurfaceTint = isHovered && isInteractive ? hoverTint : restingTint;
   // Pressing surges saturation along the same tween as the bloom/optics.
   const surfaceTint =
@@ -244,15 +210,6 @@ const GlassButton = ({
           )
         }
       : baseSurfaceTint;
-
-  /** Writes the cursor position as CSS vars — imperative, zero re-renders. */
-  const updatePointerLight = (event: { clientX: number; clientY: number }): void => {
-    const control = controlRef.current;
-    if (!control) return;
-    const rect = control.getBoundingClientRect();
-    control.style.setProperty("--lgds-button-pointer-x", `${event.clientX - rect.left}px`);
-    control.style.setProperty("--lgds-button-pointer-y", `${event.clientY - rect.top}px`);
-  };
 
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
     const control = controlRef.current;
@@ -311,14 +268,11 @@ const GlassButton = ({
     return () => resizeObserver.disconnect();
   }, []);
 
-  useEffect(
-    () => () => {
-      if (releaseTimerRef.current) {
-        window.clearTimeout(releaseTimerRef.current);
-      }
-    },
-    []
-  );
+  useEffect(() => {
+    // Drop any in-flight squish (and its inline transform) if the button is
+    // disabled mid-press.
+    if (!isInteractive) squish.cancel();
+  }, [isInteractive, squish]);
 
   const backdropImageUrl = glassBackdrop?.image;
 
@@ -334,24 +288,6 @@ const GlassButton = ({
     return () => image.removeEventListener("load", handleLoad);
   }, [backdropImageUrl]);
 
-  const clearReleaseTimer = () => {
-    if (releaseTimerRef.current) {
-      window.clearTimeout(releaseTimerRef.current);
-      releaseTimerRef.current = null;
-    }
-  };
-
-  const holdActiveState = () => {
-    setIsPressed(true);
-
-    clearReleaseTimer();
-
-    releaseTimerRef.current = window.setTimeout(() => {
-      setIsPressed(false);
-      releaseTimerRef.current = null;
-    }, ACTIVE_RELEASE_MS);
-  };
-
   const handleClick: MouseEventHandler<HTMLButtonElement> = (event) => {
     if (loading) {
       event.preventDefault();
@@ -362,60 +298,46 @@ const GlassButton = ({
   };
 
   const handlePointerDown: PointerEventHandler<HTMLButtonElement> = (event) => {
-    if (isInteractive) {
-      clearReleaseTimer();
-      setIsPressed(true);
-      safeSetPointerCapture(event.currentTarget, event.pointerId);
-    }
-
+    press.handlers.onPointerDown(event);
+    if (isInteractive) squish.setPull(PRESS_SQUISH_PULL_PX);
     onPointerDown?.(event);
   };
 
   const handlePointerUp: PointerEventHandler<HTMLButtonElement> = (event) => {
-    if (isInteractive) {
-      holdActiveState();
-    }
-
-    safeReleasePointerCapture(event.currentTarget, event.pointerId);
-
+    press.handlers.onPointerUp(event);
+    squish.release();
     onPointerUp?.(event);
   };
 
   const handlePointerCancel: PointerEventHandler<HTMLButtonElement> = (event) => {
-    clearReleaseTimer();
-    setIsPressed(false);
-    safeReleasePointerCapture(event.currentTarget, event.pointerId);
+    press.handlers.onPointerCancel(event);
+    squish.release();
     onPointerCancel?.(event);
   };
 
   const handleLostPointerCapture: PointerEventHandler<HTMLButtonElement> = (event) => {
-    if (!releaseTimerRef.current) {
-      setIsPressed(false);
-    }
-
+    press.handlers.onLostPointerCapture(event);
+    squish.release();
     onLostPointerCapture?.(event);
   };
 
   const handleKeyDown: KeyboardEventHandler<HTMLButtonElement> = (event) => {
-    if (isInteractive && !event.repeat && isActivationKey(event.key)) {
-      clearReleaseTimer();
-      setIsPressed(true);
+    press.handlers.onKeyDown(event);
+    if (isInteractive && !event.repeat && isGlassActivationKey(event.key)) {
+      squish.setPull(PRESS_SQUISH_PULL_PX);
     }
-
     onKeyDown?.(event);
   };
 
   const handleKeyUp: KeyboardEventHandler<HTMLButtonElement> = (event) => {
-    if (isActivationKey(event.key)) {
-      holdActiveState();
-    }
-
+    press.handlers.onKeyUp(event);
+    if (isGlassActivationKey(event.key)) squish.release();
     onKeyUp?.(event);
   };
 
   const handleBlur: FocusEventHandler<HTMLButtonElement> = (event) => {
-    clearReleaseTimer();
-    setIsPressed(false);
+    press.handlers.onBlur(event);
+    squish.release();
     onBlur?.(event);
   };
 
@@ -436,7 +358,7 @@ const GlassButton = ({
       onPointerDown={handlePointerDown}
       onPointerEnter={(event) => {
         setIsHovered(true);
-        updatePointerLight(event);
+        updateGlassPointerLight(event.currentTarget, event);
         props.onPointerEnter?.(event);
       }}
       onPointerLeave={(event) => {
@@ -444,7 +366,7 @@ const GlassButton = ({
         props.onPointerLeave?.(event);
       }}
       onPointerMove={(event) => {
-        updatePointerLight(event);
+        updateGlassPointerLight(event.currentTarget, event);
         props.onPointerMove?.(event);
       }}
       onPointerUp={handlePointerUp}
@@ -466,7 +388,7 @@ const GlassButton = ({
         {loading && <Spinner aria-hidden="true" />}
         <span>{children}</span>
       </Label>
-      <Lens $active={canRenderGlass} $dimmed={!refractGlass} aria-hidden="true">
+      <Lens $active={canRenderGlass} $dimmed={!refractGlass} aria-hidden="true" ref={lensRef}>
         {canRenderGlass && (
           <GlassNode
             className={glassNodeClassName}
@@ -494,17 +416,9 @@ const GlassButton = ({
             tint={surfaceTint}
           />
         )}
-        {pressProgress > 0 && (
-          <>
-            {/* Pointer light only while pressed — it rides the press tween
-                with the bloom/optics/saturation. */}
-            <CursorGlow aria-hidden="true" style={{ opacity: pressProgress }} />
-            <ExposureFlash
-              aria-hidden="true"
-              style={{ opacity: pressProgress * PRESS_EXPOSURE }}
-            />
-          </>
-        )}
+        {/* Pointer light + overexposure bloom ride the press tween with the
+            optics/saturation; the layer renders nothing at zero progress. */}
+        <GlassPressEffects exposure={PRESS_EXPOSURE} progress={pressProgress} />
       </Lens>
     </ButtonRoot>
   );
