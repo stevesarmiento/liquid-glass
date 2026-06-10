@@ -100,10 +100,18 @@ type SwitchPreviewStackProps = Pick<
   "engineMode" | "glassLens" | "glassSurfaceBlur" | "glassTint" | "renderer"
 >;
 
+const INITIAL_LENS_POSITION = { x: 0.61, y: 0.36 };
+/** How often controller stats may trigger a React re-render. */
+const STATS_FLUSH_MS = 250;
+
 export default function App() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sourceRef = useRef<HTMLDivElement | null>(null);
   const targetRef = useRef<HTMLDivElement | null>(null);
+  const glassChromeRef = useRef<HTMLDivElement | null>(null);
+  const lensPositionRef = useRef(INITIAL_LENS_POSITION);
+  const statsRef = useRef<LiquidGlassControllerStats | null>(null);
+  const statsFlushRef = useRef<number | null>(null);
   const controllerRef = useRef<LiquidGlassController | null>(null);
   const floatingControlsRef = useRef<HTMLDivElement | null>(null);
   const controlsPositionRef = useRef<FloatingControlsPosition>(getInitialControlsPosition());
@@ -111,7 +119,7 @@ export default function App() {
   const controlsDragRef = useRef<FloatingControlsDrag | null>(null);
   const controlsDragFrameRef = useRef<number | null>(null);
   const [lens, setLens] = useState<ResolvedLensParams>(INITIAL_LENS);
-  const [position, setPosition] = useState({ x: 0.61, y: 0.36 });
+  const [position, setPosition] = useState(INITIAL_LENS_POSITION);
   const [engineMode, setEngineMode] = useState<LiquidGlassEngineMode>("auto");
   const [tintMode, setTintMode] = useState<TintMode>("custom");
   const [tintName, setTintName] = useState<GlassTintName>("clear");
@@ -185,12 +193,12 @@ export default function App() {
       source: sourceRef.current,
       target: targetRef.current,
       lens,
-      position: { ...position, unit: "normalized" },
+      position: { ...lensPositionRef.current, unit: "normalized" },
       mode: renderMode,
       renderer: INITIAL_RENDERER,
       sourceImageUrl: PAINTING_URL,
       engine,
-      onStats: setStats,
+      onStats: handleStats,
     });
 
     return () => controllerRef.current?.destroy();
@@ -199,12 +207,21 @@ export default function App() {
   useEffect(() => {
     controllerRef.current?.update({
       lens,
-      position: { ...position, unit: "normalized" },
+      position: { ...lensPositionRef.current, unit: "normalized" },
       mode: renderMode,
       renderer: INITIAL_RENDERER,
       sourceImageUrl: PAINTING_URL,
     });
   }, [lens, position, renderMode]);
+
+  // The lens position is driven imperatively during drags (no React render
+  // per pointermove — Safari can't keep up with a full re-render per frame).
+  // This effect re-syncs the imperative styles whenever React state changes.
+  useLayoutEffect(() => {
+    lensPositionRef.current = position;
+    applyLensVisuals(position);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [position, lens.width, lens.height, lens.radius]);
 
   useLayoutEffect(() => {
     controlsPositionRef.current = controlsPosition;
@@ -223,11 +240,50 @@ export default function App() {
       if (controlsDragFrameRef.current !== null) {
         cancelAnimationFrame(controlsDragFrameRef.current);
       }
+      if (statsFlushRef.current !== null) {
+        window.clearTimeout(statsFlushRef.current);
+      }
       window.removeEventListener("pointermove", handleControlsDragMove);
       window.removeEventListener("pointerup", handleControlsDragEnd);
       window.removeEventListener("pointercancel", handleControlsDragEnd);
     };
   }, []);
+
+  /** Throttle stats → React state; the controller reports every apply (once
+   *  per drag frame) and re-rendering the whole playground at that rate is a
+   *  real jank source, especially in Safari. */
+  function handleStats(next: LiquidGlassControllerStats) {
+    statsRef.current = next;
+    if (statsFlushRef.current !== null) return;
+    statsFlushRef.current = window.setTimeout(() => {
+      statsFlushRef.current = null;
+      setStats(statsRef.current);
+    }, STATS_FLUSH_MS);
+  }
+
+  /** Write the lens-tracking styles directly (used per drag frame). */
+  function applyLensVisuals(next: { x: number; y: number }) {
+    const target = targetRef.current;
+    if (target) {
+      const clip = computeTargetClipPath(next, lens);
+      target.style.clipPath = clip;
+      target.style.setProperty("-webkit-clip-path", clip);
+    }
+    const chrome = glassChromeRef.current;
+    if (chrome) {
+      chrome.style.left = `${next.x * 100}%`;
+      chrome.style.top = `${next.y * 100}%`;
+    }
+  }
+
+  /** Commit the imperative drag position back into React state (pointer up). */
+  function commitLensPosition() {
+    setPosition((current) =>
+      current.x === lensPositionRef.current.x && current.y === lensPositionRef.current.y
+        ? current
+        : { ...lensPositionRef.current },
+    );
+  }
 
   function updateLens(key: keyof LensParams, value: number) {
     setSwitchLensOverrideEnabled(true);
@@ -247,10 +303,15 @@ export default function App() {
 
   function handlePointer(event: PointerEvent<HTMLElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    setPosition({
+    const next = {
       x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
       y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-    });
+    };
+    // Imperative drag path: feed the controller directly (it rAF-coalesces)
+    // and move the tracking elements without a React render per pointermove.
+    lensPositionRef.current = next;
+    controllerRef.current?.setPosition({ ...next, unit: "normalized" });
+    applyLensVisuals(next);
   }
 
   function handleControlsDragStart(event: PointerEvent<HTMLElement>) {
@@ -308,7 +369,6 @@ export default function App() {
     floatingControlsRef.current.style.transform = `translate3d(${nextPosition.x}px, ${nextPosition.y}px, 0)`;
   }
 
-  const targetClipPath = `inset(calc(${position.y * 100}% - ${lens.height / 2}px) calc(${100 - position.x * 100}% - ${lens.width / 2}px) calc(${100 - position.y * 100}% - ${lens.height / 2}px) calc(${position.x * 100}% - ${lens.width / 2}px) round ${lens.radius}px)`;
   const controlsPanelOpensUp = typeof window !== "undefined" && controlsPosition.y > window.innerHeight - 420;
 
   return (
@@ -324,6 +384,8 @@ export default function App() {
         onPointerMove={(event) => {
           if (safeHasPointerCapture(event.currentTarget, event.pointerId)) handlePointer(event);
         }}
+        onPointerUp={commitLensPosition}
+        onPointerCancel={commitLensPosition}
       >
         <div
           ref={sourceRef}
@@ -333,13 +395,10 @@ export default function App() {
         <div
           ref={targetRef}
           className="paintingLayer glassTarget"
-          style={{
-            backgroundImage: `url(${PAINTING_URL})`,
-            clipPath: targetClipPath,
-            WebkitClipPath: targetClipPath,
-          }}
+          style={{ backgroundImage: `url(${PAINTING_URL})` }}
         />
         <div
+          ref={glassChromeRef}
           className="glassChrome"
           style={{
             "--glass-tint-bg": tint.background,
@@ -354,6 +413,8 @@ export default function App() {
             "--glass-highlight-y": formatHighlightPosition(tint.highlightY),
             "--glass-tint-shadow": tint.shadow,
             "--glass-radius": `${lens.radius}px`,
+            // left/top track the lens imperatively (applyLensVisuals) so
+            // drags never depend on a React render.
             left: `${position.x * 100}%`,
             top: `${position.y * 100}%`,
             width: lens.width,
@@ -724,6 +785,13 @@ function formatHighlightPosition(value: number): string {
 
 function formatHighlightRotation(value: number): string {
   return `${Math.round(value * 100) / 100}deg`;
+}
+
+function computeTargetClipPath(
+  position: { x: number; y: number },
+  lens: ResolvedLensParams,
+): string {
+  return `inset(calc(${position.y * 100}% - ${lens.height / 2}px) calc(${100 - position.x * 100}% - ${lens.width / 2}px) calc(${100 - position.y * 100}% - ${lens.height / 2}px) calc(${position.x * 100}% - ${lens.width / 2}px) round ${lens.radius}px)`;
 }
 
 function getInitialRenderer(): LiquidGlassRenderer {

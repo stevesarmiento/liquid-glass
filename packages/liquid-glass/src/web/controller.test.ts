@@ -155,7 +155,10 @@ describe("LiquidGlassController", () => {
     controller.destroy();
   });
 
-  it("cycles the filter id on geometry-only changes when safariRefresh is on", () => {
+  it("cycles the filter id on primitive-only changes (source mode) when safariRefresh is on", () => {
+    // In source mode the filter region spans the whole source, so a position
+    // change mutates only filter *primitives* (feImage x/y) — the case where
+    // WebKit fails to repaint without an id change.
     const { container, source } = createFixture();
     const controller = createLiquidGlassController({
       container,
@@ -170,6 +173,34 @@ describe("LiquidGlassController", () => {
 
     expect(source.style.filter).toContain("url(");
     expect(source.style.filter).not.toBe(initialFilter);
+    controller.destroy();
+  });
+
+  it("does not cycle the filter id during target-mode drags (region moves with the lens)", () => {
+    // In target mode the <filter> region attributes move together with the
+    // primitives every frame; region mutations already invalidate the filter
+    // in WebKit, and cycling the id per drag frame is the expensive path.
+    const { container, source } = createFixture();
+    const target = document.createElement("div");
+    container.append(target);
+    mockRect(target);
+    const controller = createLiquidGlassController({
+      container,
+      source,
+      target,
+      mode: "target",
+      engine: createTsLiquidGlassEngine(),
+      safariRefresh: true,
+    });
+    const initialFilter = target.style.filter;
+    expect(initialFilter).toContain("url(");
+
+    controller.setPosition({ x: 0.85, y: 0.15 });
+    flushFrame();
+    controller.setPosition({ x: 0.25, y: 0.75 });
+    flushFrame();
+
+    expect(target.style.filter).toBe(initialFilter);
     controller.destroy();
   });
 

@@ -139,7 +139,16 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     },
     setPosition(position) {
       if (destroyed) return;
-      state = normalizeOptions({ ...state, position, engine });
+      // Fast path for pointer-driven drags: skip the full option/lens
+      // re-normalization and only swap the (already cheap) position.
+      state = {
+        ...state,
+        position: {
+          x: position.x ?? state.position.x,
+          y: position.y ?? state.position.y,
+          unit: position.unit ?? state.position.unit,
+        },
+      };
       scheduleApply();
     },
     destroy() {
@@ -314,17 +323,25 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     domWrites += Number(hideWebglCanvas());
     if (state.target) domWrites += Number(setStyle(state.target, "visibility", ""));
 
-    let filterInternalWrites = 0;
+    let primitiveWrites = 0;
     if (lastMap && !lastMapUrl) {
       lastMapUrl = displacementMapToPngDataUrl(lastMap);
-      filterInternalWrites += Number(setHref(elements.mapImage, lastMapUrl));
+      primitiveWrites += Number(setHref(elements.mapImage, lastMapUrl));
     }
-    filterInternalWrites += updateSvgGeometry(elements, geometry, state.lens);
-    domWrites += filterInternalWrites;
+    const geometryWrites = updateSvgGeometry(elements, geometry, state.lens);
+    primitiveWrites += geometryWrites.primitiveWrites;
+    domWrites += primitiveWrites + geometryWrites.regionWrites;
 
-    // Safari caches filter output keyed by id, so cycle the id whenever any
-    // filter internals changed (geometry or map) — not only on map regen.
-    if (state.safariRefresh && filterInternalWrites > 0) {
+    // Historically WebKit failed to repaint a filtered HTML element when only
+    // filter *primitive* attributes mutated (the classic Safari stale-filter
+    // bug), which is why the original aave implementation versions filter ids.
+    // Empirically probed (Playwright WebKit 26.4, 2026-06): primitive x/y,
+    // href, scale, and region mutations ALL repaint correctly now, and an id
+    // cycle costs ~8µs — so we keep cycling as belt-and-braces for older
+    // Safari, but only for primitive-only changes. During target-mode drags
+    // the <filter> region attributes move every frame (which invalidates the
+    // filter on its own), so drags never pay for id churn.
+    if (state.safariRefresh && primitiveWrites > 0 && geometryWrites.regionWrites === 0) {
       filterVersion += 1;
     }
     const nextId = filterVersion > 0 ? `${baseId}-${filterVersion}` : baseId;
@@ -440,32 +457,48 @@ function normalizeOptions(
   };
 }
 
-function updateSvgGeometry(elements: SvgFilterElements, geometry: LensGeometry, lens: LensParams): number {
-  let writes = 0;
-  writes += Number(setAttr(elements.filter, "x", geometry.filterX));
-  writes += Number(setAttr(elements.filter, "y", geometry.filterY));
-  writes += Number(setAttr(elements.filter, "width", geometry.filterWidth));
-  writes += Number(setAttr(elements.filter, "height", geometry.filterHeight));
-  writes += Number(setAttr(elements.mapImage, "x", geometry.left));
-  writes += Number(setAttr(elements.mapImage, "y", geometry.top));
-  writes += Number(setAttr(elements.mapImage, "width", geometry.width));
-  writes += Number(setAttr(elements.mapImage, "height", geometry.height));
-  writes += Number(setAttr(elements.mapMatrix, "values", colorMatrixStringForScale(lens.scaleX, lens.scaleY)));
-  writes += Number(setAttr(elements.sourceBlur, "stdDeviation", String(lens.blur * 0.18)));
+interface SvgGeometryWrites {
+  /** Writes to the <filter> element's own region attributes (x/y/w/h). */
+  regionWrites: number;
+  /** Writes to filter primitive attributes (feImage, matrices, scales…). */
+  primitiveWrites: number;
+}
+
+function updateSvgGeometry(
+  elements: SvgFilterElements,
+  geometry: LensGeometry,
+  lens: LensParams,
+): SvgGeometryWrites {
+  let regionWrites = 0;
+  regionWrites += Number(setAttr(elements.filter, "x", geometry.filterX));
+  regionWrites += Number(setAttr(elements.filter, "y", geometry.filterY));
+  regionWrites += Number(setAttr(elements.filter, "width", geometry.filterWidth));
+  regionWrites += Number(setAttr(elements.filter, "height", geometry.filterHeight));
+  let primitiveWrites = 0;
+  primitiveWrites += Number(setAttr(elements.mapImage, "x", geometry.left));
+  primitiveWrites += Number(setAttr(elements.mapImage, "y", geometry.top));
+  primitiveWrites += Number(setAttr(elements.mapImage, "width", geometry.width));
+  primitiveWrites += Number(setAttr(elements.mapImage, "height", geometry.height));
+  primitiveWrites += Number(
+    setAttr(elements.mapMatrix, "values", colorMatrixStringForScale(lens.scaleX, lens.scaleY)),
+  );
+  primitiveWrites += Number(setAttr(elements.sourceBlur, "stdDeviation", String(lens.blur * 0.18)));
   const baseScale = Math.max(lens.scaleX, lens.scaleY);
-  writes += Number(setAttr(elements.displacementR, "scale", baseScale * (1 + 0.2 * lens.chroma)));
-  writes += Number(setAttr(elements.displacementG, "scale", baseScale * (1 + 0.1 * lens.chroma)));
-  writes += Number(setAttr(elements.displacementB, "scale", baseScale));
+  primitiveWrites += Number(setAttr(elements.displacementR, "scale", baseScale * (1 + 0.2 * lens.chroma)));
+  primitiveWrites += Number(setAttr(elements.displacementG, "scale", baseScale * (1 + 0.1 * lens.chroma)));
+  primitiveWrites += Number(setAttr(elements.displacementB, "scale", baseScale));
   const specStrength = Math.max(0, Math.min(3, lens.glow + lens.edge));
-  writes += Number(setAttr(elements.specFlood, "flood-opacity", String(Math.min(0.72, specStrength * 0.22))));
-  writes += Number(
+  primitiveWrites += Number(
+    setAttr(elements.specFlood, "flood-opacity", String(Math.min(0.72, specStrength * 0.22))),
+  );
+  primitiveWrites += Number(
     setAttr(
       elements.specMatrix,
       "values",
       `0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 ${specStrength} 0 ${-0.5 * specStrength}`,
     ),
   );
-  return writes;
+  return { regionWrites, primitiveWrites };
 }
 
 function resolveRenderer(state: NormalizedControllerState): Exclude<LiquidGlassRenderer, "auto"> {
