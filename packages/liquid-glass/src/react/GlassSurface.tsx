@@ -1,7 +1,7 @@
-import type { CSSProperties, HTMLAttributes, ReactElement, ReactNode } from "react";
+import { useEffect, type CSSProperties, type HTMLAttributes, type ReactElement, type ReactNode } from "react";
 
+import { ensureLiquidGlassStyles } from "./inject-styles";
 import { glassTokens } from "./tokens";
-import "./styles.css";
 
 export type GlassTone = "dark" | "light" | "clear";
 export type GlassShape = "rounded" | "pill";
@@ -26,6 +26,10 @@ export function GlassSurface({
   style,
   ...props
 }: GlassSurfaceProps): ReactElement {
+  useEffect(() => {
+    ensureLiquidGlassStyles();
+  }, []);
+
   const classes = [
     "lg-glass-surface",
     `lg-glass-surface--${tone}`,

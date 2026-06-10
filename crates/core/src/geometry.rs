@@ -104,7 +104,7 @@ pub fn compute_lens_geometry(input: GeometryInput) -> LensGeometry {
         top,
         width,
         height,
-        radius: input.lens.radius.min(width * 0.5).min(height * 0.5),
+        radius: input.lens.radius.min(width * 0.5).min(height * 0.5).max(0.0),
         filter_x,
         filter_y,
         filter_width: (filter_right - filter_x).max(0.0),
@@ -143,8 +143,8 @@ pub fn color_matrix_for_scale(scale_x: f32, scale_y: f32) -> [f32; 20] {
 }
 
 pub fn target_bleed(params: &LensParams) -> u32 {
-    (params.scale_x.max(params.scale_y) * (1.0 + 0.2 * params.chroma) + params.blur + 4.0).ceil()
-        as u32
+    (params.scale_x.max(params.scale_y) * (1.0 + 0.2 * params.chroma) + params.blur * 3.0 + 4.0)
+        .ceil() as u32
 }
 
 #[cfg(test)]
@@ -153,7 +153,7 @@ mod tests {
     use crate::lens::LensParams;
 
     #[test]
-    fn target_bleed_matches_prototype_formula() {
+    fn target_bleed_covers_three_sigma_blur() {
         let lens = LensParams {
             scale_x: 20.0,
             scale_y: 10.0,
@@ -162,7 +162,8 @@ mod tests {
             ..LensParams::default()
         };
 
-        assert_eq!(target_bleed(&lens), 29);
+        // 20 * 1.1 + 2.1 * 3 + 4 = 32.3 -> 33
+        assert_eq!(target_bleed(&lens), 33);
     }
 
     #[test]
@@ -200,5 +201,79 @@ mod tests {
         assert_eq!(normalized.left, 150.0);
         assert_eq!(normalized.top, 75.0);
         assert_eq!(normalized, px);
+    }
+
+    #[test]
+    fn target_mode_clamps_filter_region_to_container() {
+        let lens = LensParams {
+            width: 100.0,
+            height: 80.0,
+            ..LensParams::default()
+        };
+        let geometry = compute_lens_geometry(GeometryInput {
+            container_width: 200.0,
+            container_height: 120.0,
+            x: 0.0,
+            y: 0.0,
+            unit: PositionUnit::Normalized,
+            mode: RenderMode::Target,
+            lens,
+        });
+
+        assert!(geometry.filter_x >= 0.0);
+        assert!(geometry.filter_y >= 0.0);
+        assert!(geometry.filter_width >= 0.0);
+        assert!(geometry.filter_x + geometry.filter_width <= 200.0);
+        assert!(geometry.filter_y + geometry.filter_height <= 120.0);
+        assert_eq!(geometry.bleed, target_bleed(&lens));
+
+        // Lens fully outside the container collapses to an empty filter region.
+        let outside = compute_lens_geometry(GeometryInput {
+            container_width: 200.0,
+            container_height: 120.0,
+            x: -500.0,
+            y: -500.0,
+            unit: PositionUnit::Px,
+            mode: RenderMode::Target,
+            lens,
+        });
+        assert_eq!(outside.filter_width, 0.0);
+    }
+
+    #[test]
+    fn negative_radius_is_floored_at_zero() {
+        let geometry = compute_lens_geometry(GeometryInput {
+            container_width: 200.0,
+            container_height: 120.0,
+            x: 0.5,
+            y: 0.5,
+            unit: PositionUnit::Normalized,
+            mode: RenderMode::Source,
+            lens: LensParams {
+                radius: -10.0,
+                ..LensParams::default()
+            },
+        });
+
+        assert_eq!(geometry.radius, 0.0);
+    }
+
+    #[test]
+    fn color_matrix_scales_red_and_green_against_dominant_axis() {
+        let matrix = color_matrix_for_scale(10.0, 20.0);
+        let expected = [
+            0.5, 0.0, 0.0, 0.0, 0.25, //
+            0.0, 1.0, 0.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0, 0.0,
+        ];
+        assert_eq!(matrix, expected);
+
+        // Zero scales must not divide by zero.
+        let zero = color_matrix_for_scale(0.0, 0.0);
+        assert_eq!(zero[0], 0.0);
+        assert_eq!(zero[6], 0.0);
+        assert_eq!(zero[4], 0.5);
+        assert_eq!(zero[9], 0.5);
     }
 }

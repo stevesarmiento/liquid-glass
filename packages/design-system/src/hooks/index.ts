@@ -1,2 +1,1 @@
-export { default as useIsSafari } from "./useIsSafari";
-
+export { default as useGlassTheme } from "./useGlassTheme";

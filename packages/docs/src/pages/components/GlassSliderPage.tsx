@@ -3,6 +3,32 @@ import { GlassSlider } from "@liquid-glass/design-system";
 import styled from "styled-components";
 
 import PreviewContainer from "../../components/PreviewContainer";
+import PropsTable, { type PropRow } from "../../components/PropsTable";
+
+const PROP_ROWS: PropRow[] = [
+  { name: "value", type: "number", description: "Controlled slider value." },
+  { name: "defaultValue", type: "number", defaultValue: "min", description: "Initial value for uncontrolled sliders." },
+  { name: "min", type: "number", defaultValue: "0", description: "Minimum slider value." },
+  { name: "max", type: "number", defaultValue: "100", description: "Maximum slider value." },
+  { name: "step", type: 'number | "any"', defaultValue: "1", description: "Step between values." },
+  { name: "onValueChange", type: "(value: number) => void", description: "Numeric value callback for controlled or uncontrolled usage." },
+  { name: "onChange", type: "ChangeEventHandler<HTMLInputElement>", description: "Native change handler for the underlying range input." },
+  { name: "label", type: "ReactNode", description: "Label rendered above the slider." },
+  { name: "showValue", type: "boolean", defaultValue: "false", description: "Displays the current value beside the label." },
+  { name: "valueFormatter", type: "(value: number) => ReactNode", description: "Formats the displayed value when showValue is enabled; string results also feed aria-valuetext." },
+  { name: "size", type: '"sm" | "md" | "lg" | "xl"', defaultValue: '"md"', description: "Preset size for the slider geometry. Manual sizing props override preset values." },
+  { name: "fillColor", type: "string", defaultValue: "theme accent (#1a88f8)", description: "Color used for the filled portion of the slider track." },
+  { name: "trackColor", type: "string", defaultValue: "theme track", description: "Color used for the unfilled slider track." },
+  { name: "sliderWidth", type: "number | string", defaultValue: "size preset", description: "Width of the full slider control." },
+  { name: "controlHeight", type: "number", defaultValue: "size preset", description: "Height of the slider interaction area." },
+  { name: "trackHeight", type: "number", defaultValue: "size preset", description: "Height of the slider track." },
+  { name: "disabled", type: "boolean", defaultValue: "false", description: "Disables the slider." },
+  { name: "glassLens", type: "Partial<LensParams>", description: "Glass lens tuning for the thumb node." },
+  { name: "glassTint", type: "GlassTintName | GlassTintInput | GlassTint", description: "Dynamic tint forwarded to the glass thumb node." },
+  { name: "glassSurfaceBlur", type: "number | string", defaultValue: "0", description: "Frosted background blur in px for the glass thumb surface." },
+  { name: "engineMode", type: "LiquidGlassEngineMode", defaultValue: '"auto"', description: "Engine mode forwarded to liquid-glass." },
+  { name: "renderer", type: "GlassRendererMode", description: "Renderer mode forwarded to liquid-glass." },
+];
 
 const Stack = styled.div`
   display: grid;
@@ -94,6 +120,11 @@ export default function GlassSliderPage() {
   value={value}
   onValueChange={setValue}
 />`}</CodeBlock>
+      </div>
+
+      <div>
+        <h2>Props</h2>
+        <PropsTable rows={PROP_ROWS} />
       </div>
     </Stack>
   );

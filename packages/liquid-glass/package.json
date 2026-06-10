@@ -14,16 +14,24 @@
     },
     "./react": {
       "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js"
-    }
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.cjs"
+    },
+    "./styles.css": "./dist/react/index.css"
   },
+  "imports": {
+    "#wasm": "./wasm/liquid_glass_core.js"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
   "files": [
     "dist",
     "wasm",
     "README.md"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/build-css.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

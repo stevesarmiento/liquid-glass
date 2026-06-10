@@ -1,4 +1,4 @@
-import styled, { createGlobalStyle, css, keyframes } from "styled-components";
+import styled, { css, keyframes } from "styled-components";
 
 export type ModalAnimationState = "open" | "closed";
 
@@ -64,7 +64,15 @@ export const ModalRoot = styled.div<{ $animationState: ModalAnimationState }>`
   place-items: center;
   padding: 16px;
   backface-visibility: hidden;
-  animation: ${({ $animationState }) => ($animationState === "open" ? modalRootIn : modalRootOut)} 200ms ease-out both;
+
+  @media (prefers-reduced-motion: no-preference) {
+    animation: ${({ $animationState }) => ($animationState === "open" ? modalRootIn : modalRootOut)} 200ms ease-out both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    opacity: ${({ $animationState }) => ($animationState === "open" ? 1 : 0)};
+    visibility: ${({ $animationState }) => ($animationState === "open" ? "visible" : "hidden")};
+  }
 `;
 
 export const Backdrop = styled.button.attrs({ type: "button" })<{ $dismissible?: boolean }>`
@@ -94,7 +102,7 @@ export const Surface = styled.div<{ $animationState: ModalAnimationState; $hasHe
   display: grid;
   max-height: inherit;
   overflow: hidden;
-  color: #111827;
+  color: var(--lgds-modal-text, #111827);
   background: transparent;
   border: 0;
   border-radius: var(--lgds-modal-radius, 18px);
@@ -105,12 +113,15 @@ export const Surface = styled.div<{ $animationState: ModalAnimationState; $hasHe
   perspective: 600;
   transform: translate3d(0, 0, 0.1px) scale(var(--lgds-modal-scale, 1));
   opacity: 1;
-  transition: transform 80ms ease-out;
-  animation: ${({ $animationState }) =>
-      $animationState === "open" ? modalSurfaceIn : modalSurfaceOut}
-    220ms ${({ $animationState }) =>
-      $animationState === "open" ? "cubic-bezier(0.175, 0.885, 0.32, 0.98)" : "ease"}
-    both;
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: transform 80ms ease-out;
+    animation: ${({ $animationState }) =>
+        $animationState === "open" ? modalSurfaceIn : modalSurfaceOut}
+      220ms ${({ $animationState }) =>
+        $animationState === "open" ? "cubic-bezier(0.175, 0.885, 0.32, 0.98)" : "ease"}
+      both;
+  }
 
   &:focus {
     outline: none;
@@ -135,12 +146,15 @@ export const ContentContainer = styled.div<{ $animationState: ModalAnimationStat
   z-index: 1;
   max-height: inherit;
   overflow: auto;
-  animation: ${({ $animationState }) =>
-      $animationState === "open"
-        ? css`
-            ${modalContentIn} 150ms 20ms both
-          `
-        : "none"};
+
+  @media (prefers-reduced-motion: no-preference) {
+    animation: ${({ $animationState }) =>
+        $animationState === "open"
+          ? css`
+              ${modalContentIn} 150ms 20ms both
+            `
+          : "none"};
+  }
 `;
 
 export const GlassLayer = styled.div`
@@ -180,7 +194,7 @@ export const Header = styled.div`
 
 export const Title = styled.h2`
   margin: 0;
-  color: #111827;
+  color: var(--lgds-modal-text, #111827);
   font-size: 16px;
   line-height: 1.25;
   font-weight: 700;
@@ -212,18 +226,21 @@ export const CloseButton = styled.button.attrs({ type: "button" })`
   height: 34px;
   flex: 0 0 auto;
   padding: 0;
-  color: rgba(17, 24, 39, 0.58);
+  color: color-mix(in srgb, var(--lgds-modal-text, #111827) 58%, transparent);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 999px;
   cursor: pointer;
-  transition:
-    color 150ms ease,
-    background-color 150ms ease,
-    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition:
+      color 150ms ease,
+      background-color 150ms ease,
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
 
   &:hover {
-    color: #111827;
+    color: var(--lgds-modal-text, #111827);
     background: rgba(255, 255, 255, 0.12);
   }
 
@@ -246,7 +263,7 @@ export const glassNodeClassName = "lgds-modal__glass-node";
 export const glassContentClassName = "lgds-modal__glass-content";
 export const glassSurfaceClassName = "lgds-modal__glass-surface";
 
-export const ModalGlassCss = createGlobalStyle`
+export const modalGlobalCss = `
   .${glassNodeClassName} {
     position: absolute;
     inset: 0;
@@ -263,7 +280,7 @@ export const ModalGlassCss = createGlobalStyle`
     inset: 0;
     z-index: 2;
     background:
-      radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight), transparent 68%),
+      radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight) 0%, var(--lg-glass-highlight) var(--lg-glass-highlight-core), transparent var(--lg-glass-highlight-spread)),
       var(--lg-glass-bg);
     border-color: var(--lg-glass-border);
     box-shadow:

@@ -15,9 +15,20 @@ export interface LensParams {
   splay: number;
   glow: number;
   edge: number;
+  /** Width of the diagonal glow band, in normalized units. Default 0.62. */
+  glowSpread?: number;
+  /** Exponent applied to the glow ramp. Default 1.5. */
+  glowExponent?: number;
+  /** Exponent applied to the edge highlight ramp. Default 1.2. */
+  edgeExponent?: number;
+  /** Rotation of the specular highlight axis, in degrees. Default 45. */
+  specularRotation?: number;
   blur: number;
   mapSize: number;
 }
+
+/** Lens params with every optional field resolved to a concrete value. */
+export type ResolvedLensParams = Required<LensParams>;
 
 export interface DisplacementMap {
   width: number;

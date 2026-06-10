@@ -14,6 +14,10 @@ pub struct LensParams {
     pub splay: f32,
     pub glow: f32,
     pub edge: f32,
+    pub glow_spread: f32,
+    pub glow_exponent: f32,
+    pub edge_exponent: f32,
+    pub specular_rotation: f32,
     pub blur: f32,
     pub map_size: u32,
 }
@@ -32,6 +36,10 @@ pub struct PartialLensParams {
     pub splay: Option<f32>,
     pub glow: Option<f32>,
     pub edge: Option<f32>,
+    pub glow_spread: Option<f32>,
+    pub glow_exponent: Option<f32>,
+    pub edge_exponent: Option<f32>,
+    pub specular_rotation: Option<f32>,
     pub blur: Option<f32>,
     pub map_size: Option<u32>,
 }
@@ -50,6 +58,10 @@ impl Default for LensParams {
             splay: 0.78,
             glow: 0.45,
             edge: 0.45,
+            glow_spread: 0.62,
+            glow_exponent: 1.5,
+            edge_exponent: 1.2,
+            specular_rotation: 45.0,
             blur: 2.4,
             map_size: 256,
         }
@@ -77,6 +89,11 @@ pub fn normalize_lens_params(input: PartialLensParams) -> LensParams {
         splay: finite_or(input.splay, defaults.splay).clamp(0.001, 1.0),
         glow: finite_or(input.glow, defaults.glow).clamp(0.0, 4.0),
         edge: finite_or(input.edge, defaults.edge).clamp(0.0, 4.0),
+        glow_spread: finite_or(input.glow_spread, defaults.glow_spread).clamp(0.05, 2.0),
+        glow_exponent: finite_or(input.glow_exponent, defaults.glow_exponent).clamp(0.1, 8.0),
+        edge_exponent: finite_or(input.edge_exponent, defaults.edge_exponent).clamp(0.1, 8.0),
+        specular_rotation: finite_or(input.specular_rotation, defaults.specular_rotation)
+            .clamp(-360.0, 360.0),
         blur: finite_or(input.blur, defaults.blur).clamp(0.0, 128.0),
         map_size,
     }
@@ -107,5 +124,45 @@ mod tests {
         assert_eq!(params.height, 40.0);
         assert_eq!(params.radius, 0.5);
         assert_eq!(params.map_size, 8);
+    }
+
+    #[test]
+    fn normalize_clamps_specular_params() {
+        let params = normalize_lens_params(PartialLensParams {
+            glow_spread: Some(99.0),
+            glow_exponent: Some(0.0),
+            edge_exponent: Some(100.0),
+            specular_rotation: Some(-1000.0),
+            ..PartialLensParams::default()
+        });
+
+        assert_eq!(params.glow_spread, 2.0);
+        assert_eq!(params.glow_exponent, 0.1);
+        assert_eq!(params.edge_exponent, 8.0);
+        assert_eq!(params.specular_rotation, -360.0);
+    }
+
+    #[test]
+    fn normalize_replaces_nan_inputs_with_defaults() {
+        let params = normalize_lens_params(PartialLensParams {
+            width: Some(f32::NAN),
+            height: Some(f32::INFINITY),
+            radius: Some(f32::NAN),
+            scale_x: Some(f32::NAN),
+            chroma: Some(f32::NEG_INFINITY),
+            depth: Some(f32::NAN),
+            dome: Some(f32::NAN),
+            splay: Some(f32::NAN),
+            glow: Some(f32::NAN),
+            edge: Some(f32::NAN),
+            glow_spread: Some(f32::NAN),
+            glow_exponent: Some(f32::NAN),
+            edge_exponent: Some(f32::NAN),
+            specular_rotation: Some(f32::NAN),
+            blur: Some(f32::NAN),
+            ..PartialLensParams::default()
+        });
+
+        assert_eq!(params, LensParams::default());
     }
 }

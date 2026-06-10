@@ -2,6 +2,7 @@ import {
   type ChangeEvent,
   type CSSProperties,
   type InputHTMLAttributes,
+  type KeyboardEventHandler,
   type PointerEventHandler,
   useEffect,
   useId,
@@ -22,23 +23,26 @@ import {
   LensSourceBackground,
   Rail,
   SliderContainer,
-  SliderCss,
   Thumb,
   Track,
   ValueText,
   Visual,
   glassContentClassName,
   glassNodeClassName,
-  glassSurfaceClassName
+  glassSurfaceClassName,
+  sliderGlobalCss
 } from "./styles";
 import type { GlassSliderProps } from "./types";
 import { GLASS_SLIDER_SIZE_PRESETS } from "../sizes";
+import { drawRoundedRect, getCanvasBackgroundColor } from "../../../lib/canvas";
+import { useGlobalCssOnce } from "../../../lib/globalCss";
+import { safeReleasePointerCapture, safeSetPointerCapture } from "../../../lib/pointer";
+import useGlassTheme from "../../../hooks/useGlassTheme";
 
 const DEFAULT_MIN = 0;
 const DEFAULT_MAX = 100;
 const DEFAULT_STEP = 1;
-const DEFAULT_FILL_COLOR = "#1a88f8";
-const DEFAULT_TRACK_COLOR = "rgba(148, 163, 184, 0.34)";
+const KEYBOARD_ACTIVE_RELEASE_MS = 320;
 const DEFAULT_SLIDER_OPTICS: Omit<LensParams, "width" | "height" | "radius"> = {
   scaleX: 38,
   scaleY: 38,
@@ -87,50 +91,6 @@ function snapValueToStep(
   return Number(clamp(snappedValue, min, max).toFixed(precision));
 }
 
-function drawRoundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-): void {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function isTransparentColor(color: string): boolean {
-  return (
-    color === "transparent" ||
-    color === "rgba(0, 0, 0, 0)" ||
-    color === "rgb(0 0 0 / 0)" ||
-    color.endsWith("/ 0)")
-  );
-}
-
-function getCanvasBackgroundColor(element: HTMLElement | null): string {
-  let current: HTMLElement | null = element;
-
-  while (current) {
-    const backgroundColor = getComputedStyle(current).backgroundColor.trim();
-    if (backgroundColor && !isTransparentColor(backgroundColor)) return backgroundColor;
-    current = current.parentElement;
-  }
-
-  return "#ffffff";
-}
-
 const SliderVisual = ({ inert = false }: { inert?: boolean }) => (
   <Visual aria-hidden={inert ? "true" : undefined}>
     <Track>
@@ -145,7 +105,7 @@ const GlassSlider = ({
   defaultValue,
   disabled = false,
   engineMode = "auto",
-  fillColor = DEFAULT_FILL_COLOR,
+  fillColor,
   glassLens,
   glassSurfaceBlur = 0,
   glassTint,
@@ -155,6 +115,7 @@ const GlassSlider = ({
   min = DEFAULT_MIN,
   onBlur,
   onChange,
+  onKeyDown,
   onLostPointerCapture,
   onPointerCancel,
   onPointerDown,
@@ -166,23 +127,29 @@ const GlassSlider = ({
   sliderWidth,
   step,
   style,
-  trackColor = DEFAULT_TRACK_COLOR,
+  trackColor,
   trackHeight,
   value,
   valueFormatter,
   ...props
 }: GlassSliderProps) => {
+  useGlobalCssOnce("lgds-slider", sliderGlobalCss);
+  const theme = useGlassTheme();
+  const resolvedFillColor = fillColor ?? theme.component.accent;
+  const resolvedTrackColor = trackColor ?? theme.component.track;
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const controlRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const skipDispatchedInputRef = useRef(false);
+  const keyboardReleaseTimerRef = useRef<number | null>(null);
   const isControlled = value !== undefined;
   const initialValue = defaultValue ?? min;
   const currentValueRef = useRef(initialValue);
   const [uncontrolledValue, setUncontrolledValue] = useState(initialValue);
   const [controlSize, setControlSize] = useState({ height: 0, width: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isKeyboardEngaged, setIsKeyboardEngaged] = useState(false);
   const currentValue = isControlled ? value : uncontrolledValue;
   currentValueRef.current = currentValue;
 
@@ -194,8 +161,12 @@ const GlassSlider = ({
     ...sizePreset.lens,
     ...glassLens
   };
-  const isGlassActive = !disabled && isDragging;
+  const isGlassActive = !disabled && (isDragging || isKeyboardEngaged);
   const formattedValue = valueFormatter ? valueFormatter(currentValue) : currentValue;
+  const formattedValueText =
+    valueFormatter && (typeof formattedValue === "string" || typeof formattedValue === "number")
+      ? String(formattedValue)
+      : undefined;
   const resolvedControlHeight = controlHeight ?? Math.max(sizePreset.controlHeight, lens.height);
   const resolvedSliderWidthValue = sliderWidth ?? sizePreset.sliderWidth;
   const resolvedSliderWidth =
@@ -220,8 +191,8 @@ const GlassSlider = ({
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
     const hostStyle = getComputedStyle(controlRef.current ?? ctx.canvas);
     const trackColor =
-      hostStyle.getPropertyValue("--lgds-slider-track-bg").trim() || DEFAULT_TRACK_COLOR;
-    const fillColor = hostStyle.getPropertyValue("--lgds-slider-fill-bg").trim() || DEFAULT_FILL_COLOR;
+      hostStyle.getPropertyValue("--lgds-slider-track-bg").trim() || resolvedTrackColor;
+    const fillColor = hostStyle.getPropertyValue("--lgds-slider-fill-bg").trim() || resolvedFillColor;
     const sourceBackground = getCanvasBackgroundColor(controlRef.current ?? ctx.canvas);
     const trackLeft = metrics.lensWidth / 2;
     const trackWidth = Math.max(0, metrics.sourceWidth - metrics.lensWidth);
@@ -293,6 +264,51 @@ const GlassSlider = ({
     return () => resizeObserver.disconnect();
   }, []);
 
+  useEffect(
+    () => () => {
+      if (keyboardReleaseTimerRef.current) {
+        window.clearTimeout(keyboardReleaseTimerRef.current);
+      }
+    },
+    []
+  );
+
+  const holdKeyboardEngagement = () => {
+    setIsKeyboardEngaged(true);
+
+    if (keyboardReleaseTimerRef.current) {
+      window.clearTimeout(keyboardReleaseTimerRef.current);
+    }
+
+    keyboardReleaseTimerRef.current = window.setTimeout(() => {
+      setIsKeyboardEngaged(false);
+      keyboardReleaseTimerRef.current = null;
+    }, KEYBOARD_ACTIVE_RELEASE_MS);
+  };
+
+  const releaseKeyboardEngagement = () => {
+    if (keyboardReleaseTimerRef.current) {
+      window.clearTimeout(keyboardReleaseTimerRef.current);
+      keyboardReleaseTimerRef.current = null;
+    }
+    setIsKeyboardEngaged(false);
+  };
+
+  const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (event) => {
+    const isValueKey =
+      event.key === "ArrowLeft" ||
+      event.key === "ArrowRight" ||
+      event.key === "ArrowUp" ||
+      event.key === "ArrowDown" ||
+      event.key === "Home" ||
+      event.key === "End" ||
+      event.key === "PageUp" ||
+      event.key === "PageDown";
+
+    if (!disabled && isValueKey) holdKeyboardEngagement();
+    onKeyDown?.(event);
+  };
+
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextValue = event.currentTarget.valueAsNumber;
     if (!skipDispatchedInputRef.current) applyValue(nextValue);
@@ -331,6 +347,7 @@ const GlassSlider = ({
 
   const handleBlur: InputHTMLAttributes<HTMLInputElement>["onBlur"] = (event) => {
     setIsDragging(false);
+    releaseKeyboardEngagement();
     onBlur?.(event);
   };
 
@@ -355,14 +372,15 @@ const GlassSlider = ({
           "--lgds-slider-lens-radius": `${lens.radius}px`,
           "--lgds-slider-lens-top": `${lensGeometry.lensY}px`,
           "--lgds-slider-lens-width": `${lens.width}px`,
-          "--lgds-slider-fill-bg": fillColor,
+          "--lgds-slider-fill-bg": resolvedFillColor,
           "--lgds-slider-track-height": `${resolvedTrackHeight}px`,
-          "--lgds-slider-track-bg": trackColor,
+          "--lgds-slider-track-bg": resolvedTrackColor,
+          "--lgds-slider-text": theme.component.text,
+          "--lgds-slider-muted": theme.component.textMuted,
           ...style
         } as CSSProperties
       }
     >
-      <SliderCss />
       {(label || showValue) && (
         <Header>
           {label && <LabelText>{label}</LabelText>}
@@ -411,12 +429,14 @@ const GlassSlider = ({
         </Rail>
         <Input
           {...props}
+          aria-valuetext={props["aria-valuetext"] ?? formattedValueText}
           disabled={disabled}
           id={inputId}
           max={max}
           min={min}
           onBlur={handleBlur}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           ref={inputRef}
           step={step}
           type="range"
@@ -430,33 +450,3 @@ const GlassSlider = ({
 GlassSlider.displayName = "GlassSlider";
 
 export default GlassSlider;
-
-function safeSetPointerCapture(element: Element, pointerId: number): void {
-  if (!("setPointerCapture" in element)) return;
-  try {
-    const pointerElement = element as Element & {
-      hasPointerCapture(pointerId: number): boolean;
-      setPointerCapture(pointerId: number): void;
-    };
-    if (!pointerElement.hasPointerCapture(pointerId)) {
-      pointerElement.setPointerCapture(pointerId);
-    }
-  } catch {
-    // Pointer capture may be unavailable in embedded browsers or interrupted synthetic drags.
-  }
-}
-
-function safeReleasePointerCapture(element: Element, pointerId: number): void {
-  if (!("releasePointerCapture" in element) || !("hasPointerCapture" in element)) return;
-  try {
-    const pointerElement = element as Element & {
-      hasPointerCapture(pointerId: number): boolean;
-      releasePointerCapture(pointerId: number): void;
-    };
-    if (pointerElement.hasPointerCapture(pointerId)) {
-      pointerElement.releasePointerCapture(pointerId);
-    }
-  } catch {
-    // Ignore stale pointer captures after canceled or browser-interrupted drags.
-  }
-}

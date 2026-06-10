@@ -14,12 +14,17 @@ const TopbarContainer = styled.header`
   border-bottom: 1px solid rgba(17, 17, 17, 0.1);
 `;
 
-export default function Topbar() {
+export default function Topbar({
+  onSearchChange,
+  searchQuery
+}: {
+  onSearchChange: (value: string) => void;
+  searchQuery: string;
+}) {
   return (
     <TopbarContainer>
       <Logo />
-      <Searchbar />
+      <Searchbar onChange={onSearchChange} value={searchQuery} />
     </TopbarContainer>
   );
 }
-

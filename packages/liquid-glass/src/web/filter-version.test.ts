@@ -4,7 +4,8 @@ import { getGlassFilterBleed, getGlassFilterVersion } from "./filter-version";
 
 describe("glass filter utilities", () => {
   it("computes bleed from max displacement, chroma, blur, and padding", () => {
-    expect(getGlassFilterBleed({ blur: 2, chroma: 0.5, scaleX: 10, scaleY: 20 })).toBe(28);
+    // ceil(20 * (1 + 0.2 * 0.5) + 2 * 3 + 4) = ceil(22 + 10) = 32
+    expect(getGlassFilterBleed({ blur: 2, chroma: 0.5, scaleX: 10, scaleY: 20 })).toBe(32);
   });
 
   it("generates stable rounded filter version keys", () => {

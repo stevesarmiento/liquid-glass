@@ -1,7 +1,24 @@
 import { normalizeLensParams } from "./defaults";
 import { createTsLiquidGlassEngine } from "./ts-engine";
 import { createWasmLiquidGlassEngine } from "./wasm-engine";
-import type { LiquidGlassEngine, LiquidGlassEngineOptions } from "./types";
+import type { LiquidGlassEngine, LiquidGlassEngineMode, LiquidGlassEngineOptions } from "./types";
+
+const sharedEngines = new Map<LiquidGlassEngineMode, LiquidGlassEngine>();
+
+/**
+ * Returns a module-level shared engine for the requested mode, creating it on
+ * first use. Components should prefer this over `createLiquidGlassEngine` so
+ * N instances do not each construct (and load WASM for) their own engine.
+ */
+export function getSharedLiquidGlassEngine(options: LiquidGlassEngineOptions = {}): LiquidGlassEngine {
+  const mode = options.mode ?? "auto";
+  let engine = sharedEngines.get(mode);
+  if (!engine) {
+    engine = createLiquidGlassEngine({ mode });
+    sharedEngines.set(mode, engine);
+  }
+  return engine;
+}
 
 export function createLiquidGlassEngine(options: LiquidGlassEngineOptions = {}): LiquidGlassEngine {
   const requestedMode = options.mode ?? "auto";

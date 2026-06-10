@@ -1,9 +1,10 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GlassNode } from "./GlassNode";
 import { GlassSurface } from "./GlassSurface";
+import { ensureLiquidGlassStyles } from "./inject-styles";
 
 class ImageDataMock {
   constructor(
@@ -48,6 +49,12 @@ describe("glass React primitives", () => {
     installCanvasMocks();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+  });
+
   it("GlassSurface renders content and expected classes", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -66,6 +73,15 @@ describe("glass React primitives", () => {
     expect(host.querySelector(".lg-glass-surface--pill")).not.toBeNull();
     expect(host.querySelector(".lg-glass-surface--interactive")).not.toBeNull();
     act(() => root.unmount());
+  });
+
+  it("injected glass styles keep host shadows unclipped", () => {
+    ensureLiquidGlassStyles();
+    const css = document.head.querySelector("style[data-liquid-glass]")?.textContent ?? "";
+
+    expect(css).toContain("--lg-glass-highlight-spread");
+    expect(css).toContain("box-shadow:");
+    expect(css).not.toContain("clip-path: inset(0 round var(--lg-glass-radius))");
   });
 
   it("GlassNode renders SVG path in non-Safari auto mode", () => {
@@ -91,11 +107,104 @@ describe("glass React primitives", () => {
 
     expect(host.querySelector("svg")).not.toBeNull();
     expect(host.querySelector("canvas")).toBeNull();
+    expect(host.querySelector(".lg-glass-node__content")?.getAttribute("aria-hidden")).toBe("true");
+    const arithmeticComposites = Array.from(host.getElementsByTagName("feComposite")).filter(
+      (node) =>
+        node.getAttribute("operator") === "arithmetic" &&
+        node.getAttribute("k2") === "1" &&
+        node.getAttribute("k3") === "1",
+    );
+    expect(arithmeticComposites.length).toBeGreaterThanOrEqual(2);
+    act(() => root.unmount());
+  });
+
+  it("injects the stylesheet exactly once on mount", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(
+        <>
+          <GlassSurface>one</GlassSurface>
+          <GlassSurface>two</GlassSurface>
+        </>,
+      );
+    });
+    ensureLiquidGlassStyles();
+
+    expect(document.head.querySelectorAll("style[data-liquid-glass]")).toHaveLength(1);
+    act(() => root.unmount());
+  });
+
+  it("GlassNode renders an opaque-ish fallback when reduced transparency is preferred", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("prefers-reduced-transparency"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(
+        <GlassNode
+          engineMode="ts"
+          lens={{ width: 32, height: 20, radius: 8, mapSize: 16 }}
+          lensX={4}
+          lensY={4}
+          sourceHeight={40}
+          sourceWidth={80}
+          sourceChildren={<span>source</span>}
+          drawSource={({ ctx }) => ctx.fillRect(0, 0, 80, 40)}
+        />,
+      );
+    });
+
+    expect(host.querySelector("svg")).toBeNull();
+    expect(host.querySelector("canvas")).toBeNull();
+    const surface = host.querySelector(".lg-glass-surface") as HTMLElement;
+    expect(surface.style.getPropertyValue("--lg-glass-bg")).toBe("rgba(255, 255, 255, 0.85)");
+    act(() => root.unmount());
+  });
+
+  it("GlassNode keeps refraction when respectReducedTransparency is false", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("prefers-reduced-transparency"),
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Chrome/125.0");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(
+        <GlassNode
+          engineMode="ts"
+          lens={{ width: 32, height: 20, radius: 8, mapSize: 16 }}
+          lensX={4}
+          lensY={4}
+          respectReducedTransparency={false}
+          sourceHeight={40}
+          sourceWidth={80}
+          sourceChildren={<span>source</span>}
+        />,
+      );
+    });
+
+    expect(host.querySelector("svg")).not.toBeNull();
     act(() => root.unmount());
   });
 
   it("GlassNode renders canvas path in Safari auto mode", () => {
-    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Version/17.0 Safari/605.1.15");
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    );
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -170,6 +279,9 @@ describe("glass React primitives", () => {
             highlightOpacity: 0.6,
             highlightWidth: 1.35,
             highlightHeight: 0.55,
+            highlightCore: 0.28,
+            highlightSpread: 0.72,
+            highlightRotation: 24,
             highlightX: 0.7,
             highlightY: 0.2,
             shadowOpacity: 0.3,
@@ -184,8 +296,12 @@ describe("glass React primitives", () => {
     expect(surface.style.getPropertyValue("--lg-glass-border")).toBe("rgba(18, 52, 86, 0.4)");
     expect(surface.style.getPropertyValue("--lg-glass-highlight-width")).toBe("135%");
     expect(surface.style.getPropertyValue("--lg-glass-highlight-height")).toBe("55%");
+    expect(surface.style.getPropertyValue("--lg-glass-highlight-core")).toBe("28%");
+    expect(surface.style.getPropertyValue("--lg-glass-highlight-spread")).toBe("72%");
+    expect(surface.style.getPropertyValue("--lg-glass-highlight-rotation")).toBe("24deg");
     expect(surface.style.getPropertyValue("--lg-glass-highlight-x")).toBe("70%");
     expect(surface.style.getPropertyValue("--lg-glass-highlight-y")).toBe("20%");
+    expect(surface.style.getPropertyValue("--lg-glass-radius")).toBe("8px");
     expect(surface.style.getPropertyValue("--lg-glass-saturation")).toBe("1.5");
     expect(surface.style.getPropertyValue("--lg-glass-surface-blur")).toBe("6px");
     act(() => root.unmount());

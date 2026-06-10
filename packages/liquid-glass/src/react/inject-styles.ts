@@ -1,12 +1,24 @@
-.lg-glass-surface {
+/**
+ * Stylesheet for the React glass primitives.
+ *
+ * This string is the single source of truth: it is injected at runtime by
+ * `ensureLiquidGlassStyles()` (called on component mount) and also emitted to
+ * dist/react/index.css at build time (scripts/build-css.mjs) for consumers
+ * who prefer an explicit `import "liquid-glass/styles.css"`.
+ */
+export const LIQUID_GLASS_STYLES = `.lg-glass-surface {
   --lg-glass-blur: 18px;
   --lg-glass-bg: rgba(23, 26, 24, 0.45);
   --lg-glass-border: rgba(255, 255, 255, 0.2);
   --lg-glass-highlight: rgba(255, 255, 255, 0.42);
   --lg-glass-highlight-width: 116%;
   --lg-glass-highlight-height: 74%;
+  --lg-glass-highlight-core: 36%;
+  --lg-glass-highlight-spread: 68%;
+  --lg-glass-highlight-rotation: -10deg;
   --lg-glass-highlight-x: 24%;
   --lg-glass-highlight-y: -20%;
+  --lg-glass-radius: 18px;
   --lg-glass-saturation: 1.18;
   --lg-glass-shadow: rgba(0, 0, 0, 0.32);
   --lg-glass-surface-blur: 0px;
@@ -17,7 +29,7 @@
   overflow: hidden;
   color: var(--lg-glass-text);
   background:
-    radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight), transparent 68%),
+    radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight) 0%, var(--lg-glass-highlight) var(--lg-glass-highlight-core), transparent var(--lg-glass-highlight-spread)),
     var(--lg-glass-bg);
   border: 1px solid var(--lg-glass-border);
   backdrop-filter: blur(var(--lg-glass-blur)) saturate(var(--lg-glass-saturation));
@@ -28,11 +40,13 @@
 }
 
 .lg-glass-surface--rounded {
-  border-radius: 18px;
+  --lg-glass-radius: 18px;
+  border-radius: var(--lg-glass-radius);
 }
 
 .lg-glass-surface--pill {
-  border-radius: 999px;
+  --lg-glass-radius: 999px;
+  border-radius: var(--lg-glass-radius);
 }
 
 .lg-glass-surface--light {
@@ -56,8 +70,7 @@
 .lg-glass-surface--interactive {
   transition:
     border-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+    box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .lg-glass-surface--interactive:hover {
@@ -66,7 +79,19 @@
     0 20px 54px rgba(0, 0, 0, 0.34),
     inset 0 1px 0 rgba(255, 255, 255, 0.54),
     inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lg-glass-surface--interactive {
+    transition:
+      border-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .lg-glass-surface--interactive:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .lg-glass-surface__shine {
@@ -81,9 +106,9 @@
   border-radius: 999px;
   filter: blur(10px);
   opacity: 0.62;
-  transform: rotate(-10deg);
-  mask-image: radial-gradient(ellipse at center, #000 0%, #000 36%, transparent 74%);
-  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, #000 36%, transparent 74%);
+  transform: rotate(var(--lg-glass-highlight-rotation));
+  mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--lg-glass-highlight-core), transparent var(--lg-glass-highlight-spread));
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--lg-glass-highlight-core), transparent var(--lg-glass-highlight-spread));
 }
 
 .lg-glass-surface__content {
@@ -127,7 +152,7 @@
   inset: 0;
   z-index: 2;
   background:
-    radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight), transparent 68%),
+    radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight) 0%, var(--lg-glass-highlight) var(--lg-glass-highlight-core), transparent var(--lg-glass-highlight-spread)),
     var(--lg-glass-bg);
   border-color: var(--lg-glass-border);
   box-shadow:
@@ -140,4 +165,48 @@
 
 .lg-glass-node__surface .lg-glass-surface__content {
   display: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .lg-glass-surface,
+  .lg-glass-node__surface.lg-glass-surface {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .lg-glass-surface {
+    --lg-glass-bg: rgba(23, 26, 24, 0.85);
+  }
+
+  .lg-glass-surface--light {
+    --lg-glass-bg: rgba(255, 255, 255, 0.88);
+  }
+
+  .lg-glass-surface--clear {
+    --lg-glass-bg: rgba(245, 247, 247, 0.85);
+  }
+}
+`;
+
+const STYLE_ATTRIBUTE = "data-liquid-glass";
+
+let injected = false;
+
+/**
+ * Idempotently appends one `<style data-liquid-glass>` tag to the document
+ * head. SSR-safe: does nothing when `document` is unavailable. Called from
+ * component mount paths, so importing the package has no side effects.
+ */
+export function ensureLiquidGlassStyles(): void {
+  if (injected) return;
+  if (typeof document === "undefined") return;
+  if (document.head.querySelector(`style[${STYLE_ATTRIBUTE}]`)) {
+    injected = true;
+    return;
+  }
+  const style = document.createElement("style");
+  style.setAttribute(STYLE_ATTRIBUTE, "");
+  style.textContent = LIQUID_GLASS_STYLES;
+  document.head.append(style);
+  injected = true;
 }

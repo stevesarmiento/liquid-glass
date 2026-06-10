@@ -144,7 +144,10 @@ function integrateDome(radius, half) {
 }
 
 function computeDomeConstants(depth, halfW, halfH) {
-  const safeDepth = Math.max(0.01, Math.min(depth, Math.min(halfW, halfH) - 1));
+  const safeDepth = Math.min(
+    Math.max(depth, 0.01),
+    Math.max(Math.min(halfW, halfH) - 1, 0.01),
+  );
   const rx = (halfW * halfW + safeDepth * safeDepth) / (2 * safeDepth);
   const ry = (halfH * halfH + safeDepth * safeDepth) / (2 * safeDepth);
   const ix = integrateDome(rx, halfW);
@@ -184,10 +187,17 @@ function generateDisplacementMap(params) {
     params.dome > 0 ? computeDomeConstants(params.dome, halfW, halfH) : null;
   const splay = Math.max(0.001, params.splay);
   const splayActive = splay < 0.999;
-  const edgeRange = Math.max(1, 3);
-  const glowThreshold = (1 - 0.62) * Math.SQRT2;
-  const glowRange = 0.62 * Math.SQRT2;
-  const specRotation = (45 * Math.PI) / 180;
+  const edgeRange = 3;
+  const glowSpread = Math.min(2, Math.max(0.05, params.glowSpread ?? 0.62));
+  const glowExponent = Math.min(8, Math.max(0.1, params.glowExponent ?? 1.5));
+  const edgeExponent = Math.min(8, Math.max(0.1, params.edgeExponent ?? 1.2));
+  const specularRotation = Math.min(
+    360,
+    Math.max(-360, params.specularRotation ?? 45),
+  );
+  const glowThreshold = (1 - glowSpread) * Math.SQRT2;
+  const glowRange = glowSpread * Math.SQRT2;
+  const specRotation = (specularRotation * Math.PI) / 180;
   const specX = Math.cos(specRotation);
   const specY = Math.sin(specRotation);
   const minHalf = Math.max(1, Math.min(halfW, halfH));
@@ -209,43 +219,62 @@ function generateDisplacementMap(params) {
     data[i + 3] = 255;
   }
 
-  function writeSymmetricPixels(px, py, r, g, b, neutral) {
+  function writeSymmetricPixels(px, py, r, g, b00, b10, b01, b11, neutral) {
     const pxR = size - 1 - px;
     const pyB = size - 1 - py;
-    writePixel(px, py, r, g, b);
-    if (pxR !== px) writePixel(pxR, py, neutral ? r : 255 - r, g, b);
-    if (pyB !== py) writePixel(px, pyB, r, neutral ? g : 255 - g, b);
+    writePixel(px, py, r, g, b00);
+    if (pxR !== px) writePixel(pxR, py, neutral ? r : 255 - r, g, b10);
+    if (pyB !== py) writePixel(px, pyB, r, neutral ? g : 255 - g, b01);
     if (pxR !== px && pyB !== py) {
-      writePixel(pxR, pyB, neutral ? r : 255 - r, neutral ? g : 255 - g, b);
+      writePixel(pxR, pyB, neutral ? r : 255 - r, neutral ? g : 255 - g, b11);
     }
+  }
+
+  // Blue/specular is NOT invariant under single-axis mirroring, so it is
+  // evaluated per mirrored pixel from that pixel's own normalized coords.
+  function specByte(nx, ny, falloff, edgeMask) {
+    const highlightAxis = Math.abs(nx * specX + ny * specY);
+    let spec = 0;
+    if (params.glow > 0) {
+      const t = Math.min(
+        1,
+        Math.max(0, (highlightAxis - glowThreshold) / glowRange),
+      );
+      spec += params.glow * Math.pow(t, glowExponent) * falloff;
+    }
+    if (params.edge > 0) {
+      spec += params.edge * edgeMask * Math.pow(highlightAxis, edgeExponent);
+    }
+    return Math.round(128 + 127 * Math.min(1, spec));
   }
 
   for (let py = 0; py < halfSize; py++) {
     const y = ((py + 0.5) / size) * (2 * halfH) - halfH;
+    const gyBase = dome
+      ? Math.sign(y) * domeGradient(Math.abs(y), dome.ry, dome.scaleY)
+      : Math.max(-1, Math.min(1, y / halfH));
+    const edgeY = splayActive
+      ? Math.max(0, 1 - (halfH - Math.abs(y)) / minHalf) * (1 - splay)
+      : 0;
+    const baseNy = Math.max(-1, Math.min(1, y / halfH));
+
     for (let px = 0; px < halfSize; px++) {
       const x = ((px + 0.5) / size) * (2 * halfW) - halfW;
       const outer = roundedRectSdf(x, y, halfW, halfH, radius);
 
       if (outer >= 0) {
-        writeSymmetricPixels(px, py, 128, 128, 128, true);
+        writeSymmetricPixels(px, py, 128, 128, 128, 128, 128, 128, true);
         continue;
       }
 
-      let gx;
-      let gy;
-      if (dome) {
-        gx = Math.sign(x) * domeGradient(Math.abs(x), dome.rx, dome.scaleX);
-        gy = Math.sign(y) * domeGradient(Math.abs(y), dome.ry, dome.scaleY);
-      } else {
-        gx = Math.max(-1, Math.min(1, x / halfW));
-        gy = Math.max(-1, Math.min(1, y / halfH));
-      }
+      let gx = dome
+        ? Math.sign(x) * domeGradient(Math.abs(x), dome.rx, dome.scaleX)
+        : Math.max(-1, Math.min(1, x / halfW));
+      let gy = gyBase;
 
       if (splayActive) {
         const edgeX =
           Math.max(0, 1 - (halfW - Math.abs(x)) / minHalf) * (1 - splay);
-        const edgeY =
-          Math.max(0, 1 - (halfH - Math.abs(y)) / minHalf) * (1 - splay);
         const originalLength = Math.hypot(gx, gy);
         gx *= 1 - edgeY;
         gy *= 1 - edgeX;
@@ -262,27 +291,17 @@ function generateDisplacementMap(params) {
       const g = Math.round((0.5 - 0.5 * gy * falloff) * 255);
 
       const baseNx = Math.max(-1, Math.min(1, x / halfW));
-      const baseNy = Math.max(-1, Math.min(1, y / halfH));
-      const highlightAxis = Math.abs(baseNx * specX + baseNy * specY);
-      let spec = 0;
-      if (params.glow > 0) {
-        const t = Math.min(
-          1,
-          Math.max(0, (highlightAxis - glowThreshold) / glowRange),
-        );
-        spec += params.glow * Math.pow(t, 1.5) * falloff;
-      }
-      if (params.edge > 0) {
-        const edgeMask = outer < 0 ? Math.max(0, 1 + outer / edgeRange) : 0;
-        spec += params.edge * edgeMask * Math.pow(highlightAxis, 1.2);
-      }
+      const edgeMask = outer < 0 ? Math.max(0, 1 + outer / edgeRange) : 0;
 
       writeSymmetricPixels(
         px,
         py,
         Math.max(0, Math.min(255, r)),
         Math.max(0, Math.min(255, g)),
-        Math.round(128 + 127 * Math.min(1, spec)),
+        specByte(baseNx, baseNy, falloff, edgeMask),
+        specByte(-baseNx, baseNy, falloff, edgeMask),
+        specByte(baseNx, -baseNy, falloff, edgeMask),
+        specByte(-baseNx, -baseNy, falloff, edgeMask),
         false,
       );
     }
@@ -303,6 +322,10 @@ function mapKey(params) {
     params.splay,
     params.glow,
     params.edge,
+    params.glowSpread ?? 0.62,
+    params.glowExponent ?? 1.5,
+    params.edgeExponent ?? 1.2,
+    params.specularRotation ?? 45,
     params.mapSize,
   ].join("|");
 }
@@ -315,9 +338,10 @@ function colorMatrixForScale(scaleX, scaleY) {
 }
 
 function targetBleed(params) {
+  // 3 sigma of Gaussian blur so the filter region fully covers the blur tail.
   return Math.ceil(
     Math.max(params.scaleX, params.scaleY) * (1 + 0.2 * params.chroma) +
-      params.blur +
+      params.blur * 3 +
       4,
   );
 }
@@ -880,7 +904,7 @@ function applyLens() {
   const rect = stage.getBoundingClientRect();
   const lensW = params.lensW;
   const lensH = params.lensH;
-  const radius = Math.min(params.radius, lensW / 2, lensH / 2);
+  const radius = Math.max(0, Math.min(params.radius, lensW / 2, lensH / 2));
   const left = state.x * rect.width - lensW / 2;
   const top = state.y * rect.height - lensH / 2;
   const targetMode = params.targetMode;

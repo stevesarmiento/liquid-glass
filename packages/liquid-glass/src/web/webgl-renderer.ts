@@ -1,0 +1,684 @@
+import type { DisplacementMap, LensParams } from "../engine/types";
+import { CANVAS_STRENGTH } from "./render-utils";
+import {
+  BLUR_FRAGMENT_SHADER_SOURCE,
+  GLASS_FRAGMENT_SHADER_SOURCE,
+  GLASS_VERTEX_SHADER_SOURCE,
+  gaussianBlurKernel,
+  type GaussianBlurKernel,
+} from "./webgl-shaders";
+
+/**
+ * GPU renderer for the glass lens. Mirrors the CPU canvas path
+ * (controller.ts / local-canvas.ts) pixel math on the GPU:
+ *
+ * - the displacement map is uploaded as an RGBA texture (LINEAR,
+ *   CLAMP_TO_EDGE) and decoded exactly like `sampleGlassChannel`
+ * - the scene is blurred with a two-pass separable Gaussian into intermediate
+ *   FBOs (the CPU path uses a single box blur; the Gaussian is
+ *   variance-matched via `boxMatchedSigma`, which looks slightly smoother)
+ * - the blurred scene is cached keyed by `sceneKey` + size + blur, like the
+ *   CPU path caches blurred pixels
+ *
+ * The module makes no DOM assumptions beyond the canvas it is given, so it is
+ * SSR-safe to import (no GL or window access at module scope).
+ */
+
+export type WebglGlassSceneSource = HTMLImageElement | HTMLCanvasElement | ImageBitmap;
+
+/** Lens rectangle in CSS units, in scene coordinates. */
+export interface WebglGlassLensRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  radius: number;
+}
+
+/** Output rectangle in CSS units, in scene coordinates. */
+export interface WebglGlassViewport {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface WebglGlassDrawInput {
+  /** Image, canvas, or bitmap holding the scene behind the lens. */
+  scene: WebglGlassSceneSource;
+  /**
+   * Cache key for the blurred scene (should capture the scene content
+   * identity). Omit for mutable canvases to re-upload and re-blur each frame;
+   * blur radius and scene size are folded into cache validity automatically.
+   */
+  sceneKey?: string;
+  map: DisplacementMap;
+  /** Normalized lens params (see normalizeLensParams). */
+  lens: LensParams;
+  geometry: WebglGlassLensRect;
+  /** Scene size in CSS units. */
+  sceneWidth: number;
+  sceneHeight: number;
+  /** Output rect in scene CSS coordinates; defaults to the full scene. */
+  viewport?: WebglGlassViewport;
+  /**
+   * How the scene source maps onto the scene rect: "cover" replicates the CPU
+   * path's cover-fit with blur bleed (default for images), "fill" stretches
+   * (default for canvases/bitmaps already drawn at scene size).
+   */
+  fit?: "cover" | "fill";
+  pixelRatio?: number;
+  strength?: number;
+}
+
+export interface WebglGlassRendererOptions {
+  /** Overrides window.devicePixelRatio (clamped to [1, 3]). */
+  pixelRatio?: number;
+  /** Called when the GL context is lost; callers should fall back to CPU. */
+  onContextLost?: () => void;
+  /** Called when the GL context is restored and resources were rebuilt. */
+  onContextRestored?: () => void;
+}
+
+export interface WebglGlassRenderer {
+  readonly canvas: HTMLCanvasElement;
+  isContextLost(): boolean;
+  render(input: WebglGlassDrawInput): void;
+  clear(): void;
+  destroy(): void;
+}
+
+const COPY_KERNEL: GaussianBlurKernel = { weights: [1], stride: 1, taps: 1 };
+
+const REQUIRED_GL_METHODS = [
+  "createShader",
+  "shaderSource",
+  "compileShader",
+  "createProgram",
+  "attachShader",
+  "linkProgram",
+  "createTexture",
+  "bindTexture",
+  "texImage2D",
+  "texParameteri",
+  "createFramebuffer",
+  "bindFramebuffer",
+  "framebufferTexture2D",
+  "createBuffer",
+  "bindBuffer",
+  "bufferData",
+  "createVertexArray",
+  "bindVertexArray",
+  "enableVertexAttribArray",
+  "vertexAttribPointer",
+  "getUniformLocation",
+  "useProgram",
+  "uniform1fv",
+  "viewport",
+  "drawArrays",
+] as const;
+
+interface BlurUniforms {
+  source: WebGLUniformLocation | null;
+  uvScale: WebGLUniformLocation | null;
+  uvOffset: WebGLUniformLocation | null;
+  direction: WebGLUniformLocation | null;
+  kernel: WebGLUniformLocation | null;
+  taps: WebGLUniformLocation | null;
+}
+
+interface GlassUniforms {
+  scene: WebGLUniformLocation | null;
+  map: WebGLUniformLocation | null;
+  sceneSize: WebGLUniformLocation | null;
+  viewportOrigin: WebGLUniformLocation | null;
+  viewportSize: WebGLUniformLocation | null;
+  lensOrigin: WebGLUniformLocation | null;
+  lensSize: WebGLUniformLocation | null;
+  radius: WebGLUniformLocation | null;
+  ratio: WebGLUniformLocation | null;
+  chromaScale: WebGLUniformLocation | null;
+}
+
+interface GlResources {
+  blurProgram: WebGLProgram;
+  glassProgram: WebGLProgram;
+  blurUniforms: BlurUniforms;
+  glassUniforms: GlassUniforms;
+  quadBuffer: WebGLBuffer;
+  vao: WebGLVertexArrayObject;
+  sourceTexture: WebGLTexture;
+  mapTexture: WebGLTexture;
+  /** The blurred scene lives here after prepareBlurredScene. */
+  pingTexture: WebGLTexture;
+  pongTexture: WebGLTexture;
+  pingFbo: WebGLFramebuffer;
+  pongFbo: WebGLFramebuffer;
+  fboWidth: number;
+  fboHeight: number;
+  cache: {
+    sceneKey: string | null;
+    sceneWidth: number;
+    sceneHeight: number;
+    blurRadiusPx: number;
+    map: DisplacementMap | null;
+  };
+}
+
+export function createWebglGlassRenderer(
+  canvas: HTMLCanvasElement,
+  options: WebglGlassRendererOptions = {},
+): WebglGlassRenderer | null {
+  const gl = getWebgl2Context(canvas);
+  if (!gl) return null;
+
+  let destroyed = false;
+  let contextLost = false;
+  let resources: GlResources | null = null;
+  const loseContextExt = safeGetLoseContextExtension(gl);
+
+  const onContextLost = (event: Event): void => {
+    event.preventDefault?.();
+    contextLost = true;
+    // All GL objects are invalid after a loss; drop them so a restore rebuilds.
+    resources = null;
+    options.onContextLost?.();
+  };
+  const onContextRestored = (): void => {
+    if (destroyed) return;
+    try {
+      resources = createResources(gl);
+      contextLost = false;
+    } catch {
+      contextLost = true;
+      resources = null;
+    }
+    if (!contextLost) options.onContextRestored?.();
+  };
+
+  canvas.addEventListener("webglcontextlost", onContextLost, false);
+  canvas.addEventListener("webglcontextrestored", onContextRestored, false);
+
+  try {
+    resources = createResources(gl);
+  } catch {
+    canvas.removeEventListener("webglcontextlost", onContextLost, false);
+    canvas.removeEventListener("webglcontextrestored", onContextRestored, false);
+    return null;
+  }
+
+  return {
+    canvas,
+    isContextLost() {
+      return contextLost || destroyed;
+    },
+    render(input) {
+      if (destroyed || contextLost || !resources) return;
+      if (typeof gl.isContextLost === "function" && gl.isContextLost()) {
+        contextLost = true;
+        return;
+      }
+      const r = resources;
+      const pixelRatio = clampPixelRatio(input.pixelRatio ?? options.pixelRatio ?? defaultPixelRatio());
+      const sceneW = Math.max(1, Math.round(input.sceneWidth * pixelRatio));
+      const sceneH = Math.max(1, Math.round(input.sceneHeight * pixelRatio));
+      const viewport = input.viewport ?? {
+        left: 0,
+        top: 0,
+        width: input.sceneWidth,
+        height: input.sceneHeight,
+      };
+      const outW = Math.max(1, Math.round(viewport.width * pixelRatio));
+      const outH = Math.max(1, Math.round(viewport.height * pixelRatio));
+      if (canvas.width !== outW || canvas.height !== outH) {
+        canvas.width = outW;
+        canvas.height = outH;
+      }
+
+      // Match the CPU path: blur radius in device pixels.
+      const blurRadiusPx = Math.round(Math.max(0, input.lens.blur) * pixelRatio);
+      const sceneKey = input.sceneKey ?? null;
+      const cacheValid =
+        sceneKey !== null &&
+        r.cache.sceneKey === sceneKey &&
+        r.cache.sceneWidth === sceneW &&
+        r.cache.sceneHeight === sceneH &&
+        r.cache.blurRadiusPx === blurRadiusPx;
+      if (!cacheValid) {
+        prepareBlurredScene(gl, r, input, sceneW, sceneH, blurRadiusPx, pixelRatio);
+        r.cache.sceneKey = sceneKey;
+        r.cache.sceneWidth = sceneW;
+        r.cache.sceneHeight = sceneH;
+        r.cache.blurRadiusPx = blurRadiusPx;
+      }
+
+      if (r.cache.map !== input.map) {
+        uploadMapTexture(gl, r.mapTexture, input.map);
+        r.cache.map = input.map;
+      }
+
+      drawGlassPass(gl, r, input, viewport, outW, outH);
+    },
+    clear() {
+      if (destroyed || contextLost || !resources) return;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    },
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      canvas.removeEventListener("webglcontextlost", onContextLost, false);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored, false);
+      if (resources) {
+        deleteResources(gl, resources);
+        resources = null;
+      }
+      try {
+        loseContextExt?.loseContext();
+      } catch {
+        // Already lost — nothing to release.
+      }
+    },
+  };
+}
+
+function getWebgl2Context(canvas: HTMLCanvasElement): WebGL2RenderingContext | null {
+  if (typeof canvas.getContext !== "function") return null;
+  let gl: unknown = null;
+  try {
+    gl = canvas.getContext("webgl2", {
+      alpha: true,
+      premultipliedAlpha: true,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      preserveDrawingBuffer: false,
+    });
+  } catch {
+    return null;
+  }
+  return isWebgl2Like(gl) ? (gl as WebGL2RenderingContext) : null;
+}
+
+/**
+ * Validates that the returned object actually looks like a WebGL2 context.
+ * jsdom and canvas mocks can return null or 2D-ish stubs for "webgl2".
+ */
+function isWebgl2Like(gl: unknown): boolean {
+  if (!gl || typeof gl !== "object") return false;
+  const candidate = gl as Record<string, unknown>;
+  return REQUIRED_GL_METHODS.every((method) => typeof candidate[method] === "function");
+}
+
+function safeGetLoseContextExtension(gl: WebGL2RenderingContext): { loseContext(): void } | null {
+  try {
+    return (gl.getExtension?.("WEBGL_lose_context") as { loseContext(): void } | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function createResources(gl: WebGL2RenderingContext): GlResources {
+  const blurProgram = createProgram(gl, GLASS_VERTEX_SHADER_SOURCE, BLUR_FRAGMENT_SHADER_SOURCE);
+  let glassProgram: WebGLProgram;
+  try {
+    glassProgram = createProgram(gl, GLASS_VERTEX_SHADER_SOURCE, GLASS_FRAGMENT_SHADER_SOURCE);
+  } catch (error) {
+    gl.deleteProgram(blurProgram);
+    throw error;
+  }
+
+  const quadBuffer = requireResource(gl.createBuffer(), "buffer");
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+
+  const vao = requireResource(gl.createVertexArray(), "vertex array");
+  gl.bindVertexArray(vao);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  const sourceTexture = createLinearTexture(gl);
+  const mapTexture = createLinearTexture(gl);
+  const pingTexture = createLinearTexture(gl);
+  const pongTexture = createLinearTexture(gl);
+
+  const pingFbo = requireResource(gl.createFramebuffer(), "framebuffer");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, pingFbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, pingTexture, 0);
+  const pongFbo = requireResource(gl.createFramebuffer(), "framebuffer");
+  gl.bindFramebuffer(gl.FRAMEBUFFER, pongFbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, pongTexture, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  return {
+    blurProgram,
+    glassProgram,
+    blurUniforms: {
+      source: gl.getUniformLocation(blurProgram, "u_source"),
+      uvScale: gl.getUniformLocation(blurProgram, "u_uvScale"),
+      uvOffset: gl.getUniformLocation(blurProgram, "u_uvOffset"),
+      direction: gl.getUniformLocation(blurProgram, "u_direction"),
+      kernel: gl.getUniformLocation(blurProgram, "u_kernel"),
+      taps: gl.getUniformLocation(blurProgram, "u_taps"),
+    },
+    glassUniforms: {
+      scene: gl.getUniformLocation(glassProgram, "u_scene"),
+      map: gl.getUniformLocation(glassProgram, "u_map"),
+      sceneSize: gl.getUniformLocation(glassProgram, "u_sceneSize"),
+      viewportOrigin: gl.getUniformLocation(glassProgram, "u_viewportOrigin"),
+      viewportSize: gl.getUniformLocation(glassProgram, "u_viewportSize"),
+      lensOrigin: gl.getUniformLocation(glassProgram, "u_lensOrigin"),
+      lensSize: gl.getUniformLocation(glassProgram, "u_lensSize"),
+      radius: gl.getUniformLocation(glassProgram, "u_radius"),
+      ratio: gl.getUniformLocation(glassProgram, "u_ratio"),
+      chromaScale: gl.getUniformLocation(glassProgram, "u_chromaScale"),
+    },
+    quadBuffer,
+    vao,
+    sourceTexture,
+    mapTexture,
+    pingTexture,
+    pongTexture,
+    pingFbo,
+    pongFbo,
+    fboWidth: 0,
+    fboHeight: 0,
+    cache: { sceneKey: null, sceneWidth: 0, sceneHeight: 0, blurRadiusPx: -1, map: null },
+  };
+}
+
+function deleteResources(gl: WebGL2RenderingContext, r: GlResources): void {
+  try {
+    gl.deleteProgram(r.blurProgram);
+    gl.deleteProgram(r.glassProgram);
+    gl.deleteBuffer(r.quadBuffer);
+    gl.deleteVertexArray(r.vao);
+    gl.deleteTexture(r.sourceTexture);
+    gl.deleteTexture(r.mapTexture);
+    gl.deleteTexture(r.pingTexture);
+    gl.deleteTexture(r.pongTexture);
+    gl.deleteFramebuffer(r.pingFbo);
+    gl.deleteFramebuffer(r.pongFbo);
+  } catch {
+    // Deleting on a lost context is a no-op; ignore.
+  }
+}
+
+function createProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
+  const vertex = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
+  let fragment: WebGLShader;
+  try {
+    fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+  } catch (error) {
+    gl.deleteShader(vertex);
+    throw error;
+  }
+  const program = gl.createProgram();
+  if (!program) {
+    gl.deleteShader(vertex);
+    gl.deleteShader(fragment);
+    throw new Error("createProgram failed");
+  }
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+  gl.deleteShader(vertex);
+  gl.deleteShader(fragment);
+  if (
+    typeof gl.getProgramParameter === "function" &&
+    !gl.getProgramParameter(program, gl.LINK_STATUS) &&
+    !(typeof gl.isContextLost === "function" && gl.isContextLost())
+  ) {
+    const log = gl.getProgramInfoLog?.(program) ?? "";
+    gl.deleteProgram(program);
+    throw new Error(`Program link failed: ${log}`);
+  }
+  return program;
+}
+
+function compileShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
+  const shader = gl.createShader(type);
+  if (!shader) throw new Error("createShader failed");
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (
+    typeof gl.getShaderParameter === "function" &&
+    !gl.getShaderParameter(shader, gl.COMPILE_STATUS) &&
+    !(typeof gl.isContextLost === "function" && gl.isContextLost())
+  ) {
+    const log = gl.getShaderInfoLog?.(shader) ?? "";
+    gl.deleteShader(shader);
+    throw new Error(`Shader compile failed: ${log}`);
+  }
+  return shader;
+}
+
+function createLinearTexture(gl: WebGL2RenderingContext): WebGLTexture {
+  const texture = requireResource(gl.createTexture(), "texture");
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return texture;
+}
+
+function requireResource<T>(resource: T | null, label: string): T {
+  if (!resource) throw new Error(`Could not create WebGL ${label}`);
+  return resource;
+}
+
+function prepareBlurredScene(
+  gl: WebGL2RenderingContext,
+  r: GlResources,
+  input: WebglGlassDrawInput,
+  sceneW: number,
+  sceneH: number,
+  blurRadiusPx: number,
+  pixelRatio: number,
+): void {
+  // Upload the raw scene source.
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, r.sourceTexture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, input.scene);
+
+  // (Re)allocate the ping/pong scene framebuffers when the size changes.
+  if (r.fboWidth !== sceneW || r.fboHeight !== sceneH) {
+    for (const texture of [r.pingTexture, r.pongTexture]) {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, sceneW, sceneH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }
+    r.fboWidth = sceneW;
+    r.fboHeight = sceneH;
+  }
+
+  const fit = input.fit ?? (isImageElement(input.scene) ? "cover" : "fill");
+  // Match the CPU path's drawCoverImage bleed: blur (CSS) * pixelRatio.
+  const fitTransform = computeFitTransform(
+    fit,
+    sceneSourceSize(input.scene),
+    sceneW,
+    sceneH,
+    Math.max(0, input.lens.blur) * pixelRatio,
+  );
+
+  gl.useProgram(r.blurProgram);
+  gl.bindVertexArray(r.vao);
+  gl.disable(gl.BLEND);
+
+  // Pass 0: fit-blit the source into the scene-sized ping buffer.
+  runBlurPass(gl, r, {
+    sourceTexture: r.sourceTexture,
+    targetFbo: r.pingFbo,
+    width: sceneW,
+    height: sceneH,
+    uvScale: fitTransform.uvScale,
+    uvOffset: fitTransform.uvOffset,
+    direction: [0, 0],
+    kernel: COPY_KERNEL,
+  });
+
+  if (blurRadiusPx > 0) {
+    const kernel = gaussianBlurKernel(blurRadiusPx);
+    // Pass 1: horizontal blur ping -> pong.
+    runBlurPass(gl, r, {
+      sourceTexture: r.pingTexture,
+      targetFbo: r.pongFbo,
+      width: sceneW,
+      height: sceneH,
+      uvScale: [1, 1],
+      uvOffset: [0, 0],
+      direction: [kernel.stride / sceneW, 0],
+      kernel,
+    });
+    // Pass 2: vertical blur pong -> ping (blurred scene ends in ping).
+    runBlurPass(gl, r, {
+      sourceTexture: r.pongTexture,
+      targetFbo: r.pingFbo,
+      width: sceneW,
+      height: sceneH,
+      uvScale: [1, 1],
+      uvOffset: [0, 0],
+      direction: [0, kernel.stride / sceneH],
+      kernel,
+    });
+  }
+}
+
+interface BlurPass {
+  sourceTexture: WebGLTexture;
+  targetFbo: WebGLFramebuffer;
+  width: number;
+  height: number;
+  uvScale: [number, number];
+  uvOffset: [number, number];
+  direction: [number, number];
+  kernel: GaussianBlurKernel;
+}
+
+function runBlurPass(gl: WebGL2RenderingContext, r: GlResources, pass: BlurPass): void {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, pass.targetFbo);
+  gl.viewport(0, 0, pass.width, pass.height);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, pass.sourceTexture);
+  gl.uniform1i(r.blurUniforms.source, 0);
+  gl.uniform2f(r.blurUniforms.uvScale, pass.uvScale[0], pass.uvScale[1]);
+  gl.uniform2f(r.blurUniforms.uvOffset, pass.uvOffset[0], pass.uvOffset[1]);
+  gl.uniform2f(r.blurUniforms.direction, pass.direction[0], pass.direction[1]);
+  gl.uniform1fv(r.blurUniforms.kernel, Float32Array.from(pass.kernel.weights));
+  gl.uniform1i(r.blurUniforms.taps, pass.kernel.taps);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+function uploadMapTexture(gl: WebGL2RenderingContext, texture: WebGLTexture, map: DisplacementMap): void {
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    map.width,
+    map.height,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    new Uint8Array(map.rgba.buffer, map.rgba.byteOffset, map.rgba.byteLength),
+  );
+}
+
+function drawGlassPass(
+  gl: WebGL2RenderingContext,
+  r: GlResources,
+  input: WebglGlassDrawInput,
+  viewport: WebglGlassViewport,
+  outW: number,
+  outH: number,
+): void {
+  const lens = input.lens;
+  const rawBaseScale = Math.max(lens.scaleX, lens.scaleY);
+  const baseScale = rawBaseScale * (input.strength ?? CANVAS_STRENGTH);
+  const ratioX = rawBaseScale > 0 ? lens.scaleX / rawBaseScale : 0;
+  const ratioY = rawBaseScale > 0 ? lens.scaleY / rawBaseScale : 0;
+  const geometry = input.geometry;
+  const radius = Math.max(0, Math.min(geometry.radius, geometry.width / 2, geometry.height / 2));
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, outW, outH);
+  gl.disable(gl.BLEND);
+  gl.useProgram(r.glassProgram);
+  gl.bindVertexArray(r.vao);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, r.pingTexture);
+  gl.uniform1i(r.glassUniforms.scene, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, r.mapTexture);
+  gl.uniform1i(r.glassUniforms.map, 1);
+
+  gl.uniform2f(r.glassUniforms.sceneSize, Math.max(1e-6, input.sceneWidth), Math.max(1e-6, input.sceneHeight));
+  gl.uniform2f(r.glassUniforms.viewportOrigin, viewport.left, viewport.top);
+  gl.uniform2f(r.glassUniforms.viewportSize, viewport.width, viewport.height);
+  gl.uniform2f(r.glassUniforms.lensOrigin, geometry.left, geometry.top);
+  gl.uniform2f(r.glassUniforms.lensSize, Math.max(1e-6, geometry.width), Math.max(1e-6, geometry.height));
+  gl.uniform1f(r.glassUniforms.radius, radius);
+  gl.uniform2f(r.glassUniforms.ratio, ratioX, ratioY);
+  gl.uniform3f(
+    r.glassUniforms.chromaScale,
+    baseScale * (1 + 0.2 * lens.chroma),
+    baseScale * (1 + 0.1 * lens.chroma),
+    baseScale,
+  );
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+function computeFitTransform(
+  fit: "cover" | "fill",
+  source: { width: number; height: number },
+  sceneW: number,
+  sceneH: number,
+  bleedPx: number,
+): { uvScale: [number, number]; uvOffset: [number, number] } {
+  if (fit === "fill" || source.width <= 0 || source.height <= 0) {
+    return { uvScale: [1, 1], uvOffset: [0, 0] };
+  }
+  // Same cover math as the CPU path's drawCoverImage (bleed * 4 oversize).
+  const scale = Math.max(
+    (sceneW + bleedPx * 4) / source.width,
+    (sceneH + bleedPx * 4) / source.height,
+  );
+  const drawW = source.width * scale;
+  const drawH = source.height * scale;
+  const offsetX = (sceneW - drawW) / 2;
+  const offsetY = (sceneH - drawH) / 2;
+  return {
+    uvScale: [sceneW / drawW, sceneH / drawH],
+    uvOffset: [-offsetX / drawW, -offsetY / drawH],
+  };
+}
+
+function sceneSourceSize(scene: WebglGlassSceneSource): { width: number; height: number } {
+  if (isImageElement(scene)) {
+    return { width: scene.naturalWidth, height: scene.naturalHeight };
+  }
+  return { width: scene.width, height: scene.height };
+}
+
+function isImageElement(scene: WebglGlassSceneSource): scene is HTMLImageElement {
+  return typeof HTMLImageElement !== "undefined" && scene instanceof HTMLImageElement;
+}
+
+function clampPixelRatio(ratio: number): number {
+  if (!Number.isFinite(ratio) || ratio <= 0) return 1;
+  return Math.max(1, Math.min(ratio, 3));
+}
+
+function defaultPixelRatio(): number {
+  return typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+}

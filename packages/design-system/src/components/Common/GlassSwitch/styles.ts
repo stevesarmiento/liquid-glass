@@ -1,4 +1,4 @@
-import styled, { createGlobalStyle, css } from "styled-components";
+import styled, { css } from "styled-components";
 
 export const SwitchContainer = styled.span<{
   $disabled?: boolean;
@@ -98,7 +98,10 @@ export const Fill = styled.span`
   background: var(--lgds-switch-fill-bg);
   border-radius: inherit;
   opacity: var(--lgds-switch-color-opacity);
-  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
 `;
 
 export const Lens = styled.span<{ $active?: boolean }>`
@@ -118,14 +121,17 @@ export const Lens = styled.span<{ $active?: boolean }>`
   border: 1px solid transparent;
   border-radius: var(--lgds-switch-lens-radius);
   box-shadow: none;
-  transition:
-    background-color var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-    border-color var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-    box-shadow var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-    width var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-    height var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-    top var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
-    left var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease);
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition:
+      background-color var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      border-color var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      box-shadow var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      width var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      height var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      top var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease),
+      left var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease);
+  }
 
   &::before,
   &::after {
@@ -136,7 +142,10 @@ export const Lens = styled.span<{ $active?: boolean }>`
     border-radius: inherit;
     content: "";
     opacity: 0;
-    transition: opacity var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease);
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition: opacity var(--lgds-switch-lens-rest-duration) var(--lgds-switch-lens-ease);
+    }
   }
 
   &::before {
@@ -159,12 +168,19 @@ export const Lens = styled.span<{ $active?: boolean }>`
     $active &&
     css`
       overflow: hidden;
-      transition-duration: var(--lgds-switch-lens-active-duration);
 
       &::before,
       &::after {
         opacity: 1;
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
         transition-duration: var(--lgds-switch-lens-active-duration);
+
+        &::before,
+        &::after {
+          transition-duration: var(--lgds-switch-lens-active-duration);
+        }
       }
     `}
 `;
@@ -208,7 +224,7 @@ export const glassNodeClassName = "lgds-switch__glass-node";
 export const glassContentClassName = "lgds-switch__lens-content";
 export const glassSurfaceClassName = "lgds-switch__lens-glass";
 
-export const SwitchCss = createGlobalStyle`
+export const switchGlobalCss = `
   .${glassNodeClassName} {
     position: absolute;
     inset: 0;
@@ -225,7 +241,7 @@ export const SwitchCss = createGlobalStyle`
     inset: 0;
     z-index: 2;
     background:
-      radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight), transparent 68%),
+      radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight) 0%, var(--lg-glass-highlight) var(--lg-glass-highlight-core), transparent var(--lg-glass-highlight-spread)),
       var(--lg-glass-bg);
     border-color: var(--lg-glass-border);
     box-shadow:

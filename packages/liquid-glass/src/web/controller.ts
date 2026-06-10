@@ -1,5 +1,5 @@
 import { normalizeLensParams } from "../engine/defaults";
-import { createLiquidGlassEngine } from "../engine/create-engine";
+import { getSharedLiquidGlassEngine } from "../engine/create-engine";
 import { colorMatrixStringForScale, mapKey } from "../engine/ts-engine";
 import type {
   DisplacementMap,
@@ -10,6 +10,7 @@ import type {
   LiquidGlassRenderMode,
 } from "../engine/types";
 import { setAttr, setHref, setStyle } from "./dom";
+import { isSafari } from "./is-safari";
 import { displacementMapToPngDataUrl } from "./png";
 import {
   CANVAS_STRENGTH,
@@ -20,6 +21,7 @@ import {
   specularAlpha,
 } from "./render-utils";
 import { createSvgFilter, type SvgFilterElements } from "./svg-filter";
+import { createWebglGlassRenderer, type WebglGlassRenderer } from "./webgl-renderer";
 
 export interface LiquidGlassControllerStats {
   activeEngine: "wasm" | "ts";
@@ -30,7 +32,7 @@ export interface LiquidGlassControllerStats {
   lastApplyMs: number;
 }
 
-export type LiquidGlassRenderer = "auto" | "svg" | "canvas";
+export type LiquidGlassRenderer = "auto" | "svg" | "canvas" | "webgl";
 
 export interface LiquidGlassControllerOptions {
   container: HTMLElement;
@@ -40,10 +42,21 @@ export interface LiquidGlassControllerOptions {
   position?: LensPosition;
   engine?: LiquidGlassEngine;
   mode?: LiquidGlassRenderMode;
+  /**
+   * "svg" filters live DOM; "webgl"/"canvas" refract an image scene
+   * (`sourceImageUrl`). "auto" (default) picks svg, except Safari + target
+   * mode + image scene where it tries WebGL and falls back to the CPU canvas.
+   * An explicit "webgl" also downgrades to "canvas" when WebGL2 is
+   * unavailable or the context is lost.
+   */
   renderer?: LiquidGlassRenderer;
   sourceImageUrl?: string;
   safariRefresh?: boolean;
-  fullDragFilter?: boolean;
+  /**
+   * When true (the default), honor `prefers-reduced-transparency: reduce` by
+   * skipping the displacement filter entirely.
+   */
+  respectReducedTransparency?: boolean;
   onStats?: (stats: LiquidGlassControllerStats) => void;
 }
 
@@ -54,10 +67,12 @@ export interface LiquidGlassController {
   destroy(): void;
 }
 
+const REDUCED_TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
+
 let nextFilterId = 0;
 
 export function createLiquidGlassController(options: LiquidGlassControllerOptions): LiquidGlassController {
-  const engine = options.engine ?? createLiquidGlassEngine({ mode: "auto" });
+  const engine = options.engine ?? getSharedLiquidGlassEngine({ mode: "auto" });
   const baseId = `liquid-glass-filter-${nextFilterId++}`;
   const elements = createSvgFilter(baseId);
   const canvasRenderer = createCanvasRenderer();
@@ -77,12 +92,41 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
   let lastMap: DisplacementMap | null = null;
   let imageState: CanvasImageState | null = null;
   let destroyed = false;
+  let rafId: number | null = null;
+  // Created lazily on the first apply that wants WebGL; renderer stays null
+  // when context creation fails so apply() falls back to the CPU canvas.
+  let webglState: { canvas: HTMLCanvasElement; renderer: WebglGlassRenderer | null } | null = null;
+
+  // Reduced-transparency media query (guard absence, e.g. jsdom/older engines).
+  let reducedTransparency = false;
+  let transparencyQuery: MediaQueryList | null = null;
+  const onTransparencyChange = (event: MediaQueryListEvent): void => {
+    reducedTransparency = event.matches;
+    scheduleApply();
+  };
+  if (typeof matchMedia === "function") {
+    try {
+      transparencyQuery = matchMedia(REDUCED_TRANSPARENCY_QUERY);
+      reducedTransparency = transparencyQuery.matches;
+      transparencyQuery.addEventListener?.("change", onTransparencyChange);
+    } catch {
+      transparencyQuery = null;
+    }
+  }
+
+  // Resize handling (guard absence in non-browser test environments).
+  let resizeObserver: ResizeObserver | null = null;
+  const observedElements = new Set<Element>();
+  if (typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(() => scheduleApply());
+  }
 
   state.container.prepend(elements.svg);
   state.container.append(canvasRenderer.canvas);
+  syncResizeObserver();
   apply();
   void engine.ready.then(() => {
-    if (!destroyed) apply();
+    if (!destroyed) scheduleApply();
   }).catch(() => undefined);
 
   return {
@@ -90,29 +134,94 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     update(next) {
       if (destroyed) return;
       state = normalizeOptions({ ...state, ...next, engine });
-      apply();
+      syncResizeObserver();
+      scheduleApply();
     },
     setPosition(position) {
       if (destroyed) return;
       state = normalizeOptions({ ...state, position, engine });
-      apply();
+      scheduleApply();
     },
     destroy() {
       destroyed = true;
+      if (rafId !== null && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = null;
+      resizeObserver?.disconnect();
+      observedElements.clear();
+      transparencyQuery?.removeEventListener?.("change", onTransparencyChange);
       elements.svg.remove();
       canvasRenderer.canvas.remove();
+      webglState?.renderer?.destroy();
+      webglState?.canvas.remove();
+      webglState = null;
       if (state.source) setStyle(state.source, "filter", "");
       if (state.target) setStyle(state.target, "filter", "");
       if (state.target) setStyle(state.target, "visibility", "");
     },
   };
 
+  /** Coalesce all applies into one per frame (latest state wins). */
+  function scheduleApply(): void {
+    if (destroyed) return;
+    if (typeof requestAnimationFrame !== "function") {
+      apply();
+      return;
+    }
+    if (rafId !== null) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      apply();
+    });
+  }
+
+  function syncResizeObserver(): void {
+    if (!resizeObserver) return;
+    const wanted = new Set<Element>([state.container]);
+    if (state.mode === "target" && state.target) wanted.add(state.target);
+    for (const element of observedElements) {
+      if (!wanted.has(element)) {
+        resizeObserver.unobserve(element);
+        observedElements.delete(element);
+      }
+    }
+    for (const element of wanted) {
+      if (!observedElements.has(element)) {
+        resizeObserver.observe(element);
+        observedElements.add(element);
+      }
+    }
+  }
+
   function apply(): void {
+    if (destroyed) return;
     const applyStarted = performance.now();
     const targetElement = state.mode === "target" ? state.target ?? state.source : state.source;
     if (!targetElement) return;
 
-    const rect = state.container.getBoundingClientRect();
+    if (state.respectReducedTransparency && reducedTransparency) {
+      let domWrites = 0;
+      domWrites += Number(setStyle(canvasRenderer.canvas, "display", "none"));
+      canvasRenderer.clear();
+      domWrites += Number(hideWebglCanvas());
+      domWrites += Number(setStyle(targetElement, "filter", ""));
+      if (state.source) domWrites += Number(setStyle(state.source, "filter", ""));
+      if (state.target) {
+        domWrites += Number(setStyle(state.target, "filter", ""));
+        domWrites += Number(setStyle(state.target, "visibility", ""));
+      }
+      finishApply(applyStarted, domWrites, resolveRenderer(state));
+      return;
+    }
+
+    // The SVG filter applies in the filtered element's user space, so in
+    // "source" mode geometry must come from the source element's rect (it can
+    // differ from the container), while "target" mode positions the overlay
+    // within the container.
+    const geometryElement =
+      state.mode === "source" ? state.source ?? state.container : state.container;
+    const rect = geometryElement.getBoundingClientRect();
     const geometry = engine.computeLensGeometry({
       containerWidth: rect.width,
       containerHeight: rect.height,
@@ -134,12 +243,51 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       filterVersion += 1;
     }
 
-    const activeRenderer = resolveRenderer(state);
-    stats.activeRenderer = activeRenderer;
+    let activeRenderer = resolveRenderer(state);
+    let webglRenderer: WebglGlassRenderer | null = null;
+    if (activeRenderer === "webgl") {
+      webglRenderer = ensureWebglRenderer();
+      if (!webglRenderer) activeRenderer = "canvas";
+    }
+
+    if (activeRenderer === "webgl" && webglRenderer && webglState) {
+      const image = ensureCanvasImage(state.sourceImageUrl);
+      domWrites += Number(setStyle(webglState.canvas, "display", "block"));
+      domWrites += Number(setStyle(canvasRenderer.canvas, "display", "none"));
+      canvasRenderer.clear();
+      domWrites += Number(setStyle(targetElement, "filter", ""));
+      domWrites += Number(setStyle(targetElement, "visibility", "hidden"));
+      const inactive = state.mode === "target" ? state.source : state.target;
+      if (inactive && inactive !== targetElement) {
+        domWrites += Number(setStyle(inactive, "filter", ""));
+      }
+      if (image && lastMap) {
+        const containerRect = state.container.getBoundingClientRect();
+        webglRenderer.render({
+          scene: image,
+          sceneKey: [
+            image.currentSrc || image.src,
+            image.naturalWidth,
+            image.naturalHeight,
+            Math.round(state.lens.blur * 100),
+          ].join("|"),
+          map: lastMap,
+          lens: state.lens,
+          geometry,
+          sceneWidth: containerRect.width,
+          sceneHeight: containerRect.height,
+        });
+      } else {
+        webglRenderer.clear();
+      }
+      finishApply(applyStarted, domWrites, activeRenderer);
+      return;
+    }
 
     if (activeRenderer === "canvas") {
       const image = ensureCanvasImage(state.sourceImageUrl);
       domWrites += Number(setStyle(canvasRenderer.canvas, "display", "block"));
+      domWrites += Number(hideWebglCanvas());
       domWrites += Number(setStyle(targetElement, "filter", ""));
       domWrites += Number(setStyle(targetElement, "visibility", "hidden"));
       const inactive = state.mode === "target" ? state.source : state.target;
@@ -148,7 +296,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       }
       if (image && lastMap) {
         canvasRenderer.draw({
-          container: state.container,
+          containerRect: state.container.getBoundingClientRect(),
           geometry,
           image,
           lens: state.lens,
@@ -157,32 +305,34 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       } else {
         canvasRenderer.clear();
       }
-      stats.activeEngine = engine.mode;
-      stats.applyCount += 1;
-      stats.domWrites += domWrites;
-      stats.lastApplyMs = performance.now() - applyStarted;
-      state.onStats?.({ ...stats });
+      finishApply(applyStarted, domWrites, activeRenderer);
       return;
     }
 
     domWrites += Number(setStyle(canvasRenderer.canvas, "display", "none"));
     canvasRenderer.clear();
+    domWrites += Number(hideWebglCanvas());
     if (state.target) domWrites += Number(setStyle(state.target, "visibility", ""));
 
+    let filterInternalWrites = 0;
     if (lastMap && !lastMapUrl) {
       lastMapUrl = displacementMapToPngDataUrl(lastMap);
-      domWrites += Number(setHref(elements.mapImage, lastMapUrl));
+      filterInternalWrites += Number(setHref(elements.mapImage, lastMapUrl));
+    }
+    filterInternalWrites += updateSvgGeometry(elements, geometry, state.lens);
+    domWrites += filterInternalWrites;
+
+    // Safari caches filter output keyed by id, so cycle the id whenever any
+    // filter internals changed (geometry or map) — not only on map regen.
+    if (state.safariRefresh && filterInternalWrites > 0) {
+      filterVersion += 1;
+    }
+    const nextId = filterVersion > 0 ? `${baseId}-${filterVersion}` : baseId;
+    if (nextId !== currentFilterId) {
+      currentFilterId = nextId;
+      domWrites += Number(setAttr(elements.filter, "id", currentFilterId));
     }
 
-    if (state.safariRefresh || filterVersion > 0) {
-      const nextId = `${baseId}-${filterVersion}`;
-      if (nextId !== currentFilterId) {
-        currentFilterId = nextId;
-        domWrites += Number(setAttr(elements.filter, "id", currentFilterId));
-      }
-    }
-
-    domWrites += updateSvgGeometry(elements, geometry, state.lens);
     domWrites += Number(setStyle(targetElement, "filter", `url(#${currentFilterId})`));
 
     const inactive = state.mode === "target" ? state.source : state.target;
@@ -190,6 +340,15 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       domWrites += Number(setStyle(inactive, "filter", ""));
     }
 
+    finishApply(applyStarted, domWrites, activeRenderer);
+  }
+
+  function finishApply(
+    applyStarted: number,
+    domWrites: number,
+    activeRenderer: Exclude<LiquidGlassRenderer, "auto">,
+  ): void {
+    stats.activeRenderer = activeRenderer;
     stats.activeEngine = engine.mode;
     stats.applyCount += 1;
     stats.domWrites += domWrites;
@@ -207,21 +366,67 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     image.decoding = "async";
     image.src = url;
     image.onload = () => {
-      if (!destroyed) apply();
+      if (!destroyed) scheduleApply();
     };
     imageState = { url, image };
     return null;
   }
+
+  /**
+   * Lazily create the WebGL overlay canvas + renderer. Returns null when
+   * WebGL2 is unavailable or the context is currently lost, so apply() falls
+   * back to the CPU canvas renderer.
+   */
+  function ensureWebglRenderer(): WebglGlassRenderer | null {
+    if (destroyed) return null;
+    if (!webglState) {
+      const canvas = document.createElement("canvas");
+      styleOverlayCanvas(canvas);
+      const renderer = createWebglGlassRenderer(canvas, {
+        onContextLost: () => scheduleApply(),
+        onContextRestored: () => scheduleApply(),
+      });
+      if (renderer) state.container.append(canvas);
+      webglState = { canvas, renderer };
+    }
+    const renderer = webglState.renderer;
+    if (!renderer || renderer.isContextLost()) return null;
+    return renderer;
+  }
+
+  function hideWebglCanvas(): boolean {
+    if (!webglState?.renderer) return false;
+    const changed = setStyle(webglState.canvas, "display", "none");
+    webglState.renderer.clear();
+    return changed;
+  }
+}
+
+interface NormalizedControllerState {
+  container: HTMLElement;
+  source?: HTMLElement;
+  target?: HTMLElement;
+  lens: LensParams;
+  position: Required<LensPosition>;
+  engine: LiquidGlassEngine;
+  mode: LiquidGlassRenderMode;
+  renderer: LiquidGlassRenderer;
+  sourceImageUrl?: string;
+  safariRefresh: boolean;
+  respectReducedTransparency: boolean;
+  onStats?: (stats: LiquidGlassControllerStats) => void;
 }
 
 function normalizeOptions(
   options: LiquidGlassControllerOptions & { engine: LiquidGlassEngine },
-): Required<Pick<LiquidGlassControllerOptions, "container" | "engine" | "mode" | "position" | "renderer" | "safariRefresh" | "fullDragFilter">> &
-  Omit<LiquidGlassControllerOptions, "container" | "engine" | "mode" | "position" | "renderer" | "safariRefresh" | "fullDragFilter"> & {
-    lens: LensParams;
-  } {
+): NormalizedControllerState {
   return {
-    ...options,
+    container: options.container,
+    source: options.source,
+    target: options.target,
+    engine: options.engine,
+    onStats: options.onStats,
+    sourceImageUrl: options.sourceImageUrl,
     lens: normalizeLensParams(options.lens),
     mode: options.mode ?? "source",
     renderer: options.renderer ?? "auto",
@@ -231,7 +436,7 @@ function normalizeOptions(
       unit: options.position?.unit ?? "normalized",
     },
     safariRefresh: options.safariRefresh ?? isSafari(),
-    fullDragFilter: options.fullDragFilter ?? true,
+    respectReducedTransparency: options.respectReducedTransparency ?? true,
   };
 }
 
@@ -263,16 +468,11 @@ function updateSvgGeometry(elements: SvgFilterElements, geometry: LensGeometry, 
   return writes;
 }
 
-function isSafari(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-}
-
-function resolveRenderer(
-  state: ReturnType<typeof normalizeOptions>,
-): Exclude<LiquidGlassRenderer, "auto"> {
-  if (state.renderer === "svg" || state.renderer === "canvas") return state.renderer;
-  if (state.mode === "target" && state.sourceImageUrl && isSafari()) return "canvas";
+function resolveRenderer(state: NormalizedControllerState): Exclude<LiquidGlassRenderer, "auto"> {
+  if (state.renderer !== "auto") return state.renderer;
+  // Where auto used to pick the CPU canvas (Safari + target + image scene),
+  // prefer WebGL; apply() downgrades to "canvas" when creation fails.
+  if (state.mode === "target" && state.sourceImageUrl && isSafari()) return "webgl";
   return "svg";
 }
 
@@ -282,11 +482,26 @@ interface CanvasImageState {
 }
 
 interface CanvasDrawInput {
-  container: HTMLElement;
+  containerRect: DOMRect;
   geometry: LensGeometry;
   image: HTMLImageElement;
   lens: LensParams;
   map: DisplacementMap;
+}
+
+function getPixelRatio(): number {
+  const ratio = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  return Math.max(1, Math.min(ratio, 3));
+}
+
+function styleOverlayCanvas(canvas: HTMLCanvasElement): void {
+  canvas.style.position = "absolute";
+  canvas.style.inset = "0";
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.zIndex = "3";
+  canvas.style.pointerEvents = "none";
+  canvas.style.display = "none";
 }
 
 function createCanvasRenderer() {
@@ -296,11 +511,7 @@ function createCanvasRenderer() {
   const sceneCtx = sceneCanvas.getContext("2d", { alpha: false, willReadFrequently: true });
   let sceneCache: { key: string; pixels: ImageData } | null = null;
 
-  canvas.style.position = "absolute";
-  canvas.style.inset = "0";
-  canvas.style.zIndex = "3";
-  canvas.style.pointerEvents = "none";
-  canvas.style.display = "none";
+  styleOverlayCanvas(canvas);
 
   return {
     canvas,
@@ -310,52 +521,55 @@ function createCanvasRenderer() {
     },
     draw(input: CanvasDrawInput) {
       if (!ctx || !sceneCtx) return;
-      const rect = input.container.getBoundingClientRect();
-      const width = Math.max(1, Math.round(rect.width));
-      const height = Math.max(1, Math.round(rect.height));
+      const pixelRatio = getPixelRatio();
+      const cssWidth = Math.max(1, Math.round(input.containerRect.width));
+      const cssHeight = Math.max(1, Math.round(input.containerRect.height));
+      const width = Math.max(1, Math.round(cssWidth * pixelRatio));
+      const height = Math.max(1, Math.round(cssHeight * pixelRatio));
       resizeCanvas(canvas, width, height);
       resizeCanvas(sceneCanvas, width, height);
       ctx.clearRect(0, 0, width, height);
       const blur = input.lens.blur;
-      const cacheKey = getCanvasSceneCacheKey(input.image, width, height, blur);
+      const cacheKey = getCanvasSceneCacheKey(input.image, width, height, blur, pixelRatio);
       if (sceneCache?.key !== cacheKey) {
-        drawCoverImage(sceneCtx, input.image, width, height, blur);
-        applyCanvasBlur(sceneCtx, width, height, blur);
+        drawCoverImage(sceneCtx, input.image, width, height, blur * pixelRatio);
+        applyCanvasBlur(sceneCtx, width, height, blur, pixelRatio);
         sceneCache = {
           key: cacheKey,
           pixels: sceneCtx.getImageData(0, 0, width, height),
         };
       }
       const scenePixels = sceneCache.pixels;
-      const lensW = Math.max(1, Math.round(input.geometry.width));
-      const lensH = Math.max(1, Math.round(input.geometry.height));
-      const left = Math.round(input.geometry.left);
-      const top = Math.round(input.geometry.top);
+      const lensW = Math.max(1, Math.round(input.geometry.width * pixelRatio));
+      const lensH = Math.max(1, Math.round(input.geometry.height * pixelRatio));
+      const left = Math.round(input.geometry.left * pixelRatio);
+      const top = Math.round(input.geometry.top * pixelRatio);
       const output = ctx.createImageData(lensW, lensH);
       const out = output.data;
-      const scene = scenePixels.data;
 
       for (let y = 0; y < lensH; y += 1) {
         for (let x = 0; x < lensW; x += 1) {
           const outIndex = (y * lensW + x) * 4;
-          if (!roundedRectInside(x + 0.5, y + 0.5, lensW, lensH, input.geometry.radius)) {
+          const cssX = (x + 0.5) / pixelRatio;
+          const cssY = (y + 0.5) / pixelRatio;
+          if (!roundedRectInside(cssX, cssY, input.geometry.width, input.geometry.height, input.geometry.radius)) {
             out[outIndex + 3] = 0;
             continue;
           }
 
           const sampleInput = {
-            source: scene,
+            source: scenePixels.data,
             sourceWidth: width,
             sourceHeight: height,
             map: input.map,
             lens: input.lens,
-            lensWidth: lensW,
-            lensHeight: lensH,
-            lensX: left,
-            lensY: top,
-            localX: x,
-            localY: y,
-            pixelRatio: 1,
+            lensWidth: input.geometry.width,
+            lensHeight: input.geometry.height,
+            lensX: input.geometry.left,
+            lensY: input.geometry.top,
+            localX: cssX,
+            localY: cssY,
+            pixelRatio,
             strength: CANVAS_STRENGTH,
           };
 
@@ -364,7 +578,7 @@ function createCanvasRenderer() {
           out[outIndex + 2] = sampleGlassChannel(sampleInput, 2);
           out[outIndex + 3] = 255;
 
-          const alpha = specularAlpha(input.map, x, y, lensW, lensH);
+          const alpha = specularAlpha(input.map, cssX, cssY, input.geometry.width, input.geometry.height);
           if (alpha > 0) {
             out[outIndex] = Math.round(out[outIndex] * (1 - alpha) + 255 * alpha);
             out[outIndex + 1] = Math.round(out[outIndex + 1] * (1 - alpha) + 255 * alpha);
@@ -400,6 +614,7 @@ function getCanvasSceneCacheKey(
   width: number,
   height: number,
   blur: number,
+  pixelRatio: number,
 ): string {
   return [
     image.currentSrc || image.src,
@@ -408,5 +623,6 @@ function getCanvasSceneCacheKey(
     width,
     height,
     Math.round(blur * 100),
+    Math.round(pixelRatio * 100),
   ].join("|");
 }

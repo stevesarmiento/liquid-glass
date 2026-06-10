@@ -10,7 +10,7 @@ import {
   specularAlpha,
 } from "./render-utils";
 
-export type GlassRendererMode = "auto" | "svg" | "canvas";
+export type GlassRendererMode = "auto" | "svg" | "canvas" | "webgl";
 
 export interface GlassNodeMetrics {
   sourceWidth: number;

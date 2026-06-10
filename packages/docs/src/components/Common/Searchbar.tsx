@@ -19,7 +19,20 @@ const SearchInput = styled.input`
   }
 `;
 
-export default function Searchbar() {
-  return <SearchInput aria-label="Search docs" placeholder="Search docs" type="search" />;
+export default function Searchbar({
+  onChange,
+  value
+}: {
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <SearchInput
+      aria-label="Search docs"
+      onChange={(event) => onChange(event.currentTarget.value)}
+      placeholder="Search docs"
+      type="search"
+      value={value}
+    />
+  );
 }
-

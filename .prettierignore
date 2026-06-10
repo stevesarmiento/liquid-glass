@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+dist/
+.turbo/
+target/
+packages/liquid-glass/wasm/
+
+# Research artifacts and vendored references (not ours to format)
+artifacts/
+references/
+prototype/
+scripts/
+
+# Package source trees are not prettier-formatted yet; excluded so
+# format:check stays green without a repo-wide reformat. Remove these
+# entries (and run `bun run format`) when ready to adopt prettier in src.
+packages/*/src/
+
+# Lockfiles / generated
+bun.lock
+Cargo.lock
+CHANGELOG.md

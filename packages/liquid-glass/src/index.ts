@@ -1,5 +1,5 @@
 export { DEFAULT_LENS_PARAMS, normalizeLensParams } from "./engine/defaults";
-export { createLiquidGlassEngine } from "./engine/create-engine";
+export { createLiquidGlassEngine, getSharedLiquidGlassEngine } from "./engine/create-engine";
 export {
   colorMatrixForScale,
   colorMatrixStringForScale,
@@ -10,10 +10,12 @@ export {
   roundedRectSdf,
   targetBleed,
 } from "./engine/ts-engine";
-export { compareEngineOutput } from "./engine/parity";
+export { PARITY_TOLERANCE, compareEngineOutput, compareMapBytes } from "./engine/parity";
+export type { ParityResult } from "./engine/parity";
 export { getGlassFilterBleed, getGlassFilterVersion } from "./web/filter-version";
+export { isSafari } from "./web/is-safari";
 export { renderLocalGlassCanvas } from "./web/local-canvas";
-export { GLASS_TINTS, createGlassTint, resolveGlassTint } from "./web/tints";
+export { GLASS_TINTS, createGlassTint, resolveGlassTint, withTintBackgroundAlpha } from "./web/tints";
 export type {
   ActiveLiquidGlassEngineMode,
   DisplacementMap,
@@ -26,6 +28,7 @@ export type {
   LiquidGlassEngineMode,
   LiquidGlassEngineOptions,
   LiquidGlassRenderMode,
+  ResolvedLensParams,
 } from "./engine/types";
 export type {
   GlassCanvasSource,
@@ -43,3 +46,18 @@ export {
   type LiquidGlassControllerStats,
   type LiquidGlassRenderer,
 } from "./web/controller";
+export {
+  createWebglGlassRenderer,
+  type WebglGlassDrawInput,
+  type WebglGlassLensRect,
+  type WebglGlassRenderer,
+  type WebglGlassRendererOptions,
+  type WebglGlassSceneSource,
+  type WebglGlassViewport,
+} from "./web/webgl-renderer";
+export { renderLocalGlassWebgl, type LocalGlassWebglRenderInput } from "./web/webgl-local";
+export {
+  boxMatchedSigma,
+  gaussianBlurKernel,
+  type GaussianBlurKernel,
+} from "./web/webgl-shaders";

@@ -7,7 +7,7 @@ import {
   useRef,
 } from "react";
 
-import { createLiquidGlassEngine } from "../engine/create-engine";
+import { getSharedLiquidGlassEngine } from "../engine/create-engine";
 import type { LensParams, LiquidGlassEngineMode, LiquidGlassRenderMode } from "../engine/types";
 import {
   createLiquidGlassController,
@@ -39,7 +39,7 @@ export function LiquidGlass({
   const sourceRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<LiquidGlassController | null>(null);
   const lensKey = JSON.stringify(lens ?? {});
-  const engine = useMemo(() => createLiquidGlassEngine({ mode: engineMode }), [engineMode]);
+  const engine = useMemo(() => getSharedLiquidGlassEngine({ mode: engineMode }), [engineMode]);
 
   useEffect(() => {
     if (!containerRef.current || !sourceRef.current) return;

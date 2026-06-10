@@ -1,6 +1,11 @@
 import type { DisplacementMap, LensParams } from "../engine/types";
 
-export const CANVAS_STRENGTH = 0.62;
+/**
+ * Default displacement strength for the canvas renderers. Kept exported as a
+ * tunable option, but it defaults to 1 so the canvas path matches the SVG
+ * filter path (the old 0.62 damping made the two renderers visibly diverge).
+ */
+export const CANVAS_STRENGTH = 1;
 
 export interface GlassSampleInput {
   source: Uint8ClampedArray;

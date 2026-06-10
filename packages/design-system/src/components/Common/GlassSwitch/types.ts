@@ -2,6 +2,7 @@ import type {
   ChangeEventHandler,
   CSSProperties,
   InputHTMLAttributes,
+  KeyboardEventHandler,
   ReactNode
 } from "react";
 import type {
@@ -17,8 +18,12 @@ import type { GlassComponentSize } from "../sizes";
 export interface GlassSwitchProps
   extends Omit<
     InputHTMLAttributes<HTMLInputElement>,
-    "checked" | "children" | "defaultChecked" | "onChange" | "size" | "type"
+    "checked" | "children" | "defaultChecked" | "onChange" | "onKeyDown" | "onKeyUp" | "size" | "type"
   > {
+  /** Keyboard handler attached to the visible switch button control. */
+  onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
+  /** Keyboard handler attached to the visible switch button control. */
+  onKeyUp?: KeyboardEventHandler<HTMLButtonElement>;
   /** Holds the active glass stage for demos or externally controlled interactions. */
   active?: boolean;
   /** Controlled checked state. */

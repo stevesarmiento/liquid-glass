@@ -90,23 +90,26 @@ const NavLabel = styled.div`
   text-transform: uppercase;
 `;
 
-const NavLink = styled.a<{ $active?: boolean; $disabled?: boolean }>`
+const NavLink = styled.a<{ $active?: boolean }>`
   display: block;
   min-height: 32px;
   padding: 8px 10px;
-  color: ${({ $active, $disabled }) =>
-    $disabled ? "rgba(17, 17, 17, 0.32)" : $active ? "#111111" : "rgba(17, 17, 17, 0.68)"};
+  color: ${({ $active }) => ($active ? "#111111" : "rgba(17, 17, 17, 0.68)")};
   background: ${({ $active }) => ($active ? "rgba(17, 17, 17, 0.06)" : "transparent")};
   border-radius: 6px;
   font-size: 13px;
   font-weight: ${({ $active }) => ($active ? 650 : 500)};
   text-decoration: none;
-  pointer-events: ${({ $disabled }) => ($disabled ? "none" : "auto")};
 
   &:hover {
     color: #111111;
     background: rgba(17, 17, 17, 0.05);
   }
+`;
+
+const NoResults = styled.p`
+  padding: 0 10px;
+  font-size: 13px;
 `;
 
 const Content = styled.main`
@@ -124,7 +127,23 @@ const routes: Record<string, ComponentType> = {
 
 export default function App() {
   const [path, setPath] = useState(() => normalizePath(window.location.pathname));
+  const [searchQuery, setSearchQuery] = useState("");
   const Page = useMemo(() => routes[path] ?? IntroductionPage, [path]);
+  const filteredNav = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return rootNav;
+
+    return rootNav
+      .map((group) => ({
+        ...group,
+        items: group.items.filter(
+          (item) =>
+            item.label.toLowerCase().includes(query) ||
+            group.label.toLowerCase().includes(query)
+        ),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [searchQuery]);
 
   useEffect(() => {
     const handlePopState = () => setPath(normalizePath(window.location.pathname));
@@ -142,21 +161,20 @@ export default function App() {
     <GlassDesignSystemProvider>
       <GlobalDocsStyle />
       <Shell>
-        <Topbar />
+        <Topbar onSearchChange={setSearchQuery} searchQuery={searchQuery} />
         <Body>
           <Sidebar>
-            {rootNav.map((group) => (
+            {filteredNav.map((group) => (
               <NavGroup key={group.label}>
                 <NavLabel>{group.label}</NavLabel>
                 {group.items.map((item) => (
                   <NavLink
                     key={item.href}
                     $active={normalizePath(item.href) === path}
-                    $disabled={"disabled" in item && item.disabled}
                     href={item.href}
                     onClick={(event) => {
                       event.preventDefault();
-                      if (!("disabled" in item && item.disabled)) navigate(item.href);
+                      navigate(item.href);
                     }}
                   >
                     {item.label}
@@ -164,6 +182,7 @@ export default function App() {
                 ))}
               </NavGroup>
             ))}
+            {filteredNav.length === 0 && <NoResults>No pages match “{searchQuery.trim()}”.</NoResults>}
           </Sidebar>
           <Content>
             <Page />

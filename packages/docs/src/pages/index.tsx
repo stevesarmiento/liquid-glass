@@ -16,9 +16,9 @@ export default function IntroductionPage() {
         </p>
       </div>
       <p>
-        This docs site follows the Hillside reference structure. The first component is live;
-        the remaining getting-started and foundation pages are placeholders while the system
-        shape settles.
+        This docs site follows the Hillside reference structure. Three components are live —
+        Glass Modal, Glass Slider, and Glass Switch — while the remaining getting-started
+        pages are placeholders as the system shape settles.
       </p>
     </Stack>
   );

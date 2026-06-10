@@ -8,11 +8,18 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo dev",
-    "build": "turbo build",
-    "test": "cargo test && turbo test",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "build:all": "turbo run build build:wasm",
+    "build:wasm": "turbo run build:wasm",
+    "test": "cargo test && turbo run test",
     "test:wasm": "cd packages/liquid-glass && bun run test:wasm",
-    "build:wasm": "cd packages/liquid-glass && bun run build:wasm",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "turbo run build && changeset publish",
     "playground": "cd packages/playground && bun run dev",
     "docs": "cd packages/docs && bun run dev",
     "download": "node scripts/download.mjs",
@@ -23,6 +30,7 @@
     "summarize": "node scripts/summarize.mjs"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "prettier": "^3.6.2",
     "turbo": "^2.5.4",
     "typescript": "^5.8.3"

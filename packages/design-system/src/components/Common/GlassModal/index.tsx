@@ -1,4 +1,13 @@
-import { type CSSProperties, type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import { createPortal } from "react-dom";
 import { type GlassCanvasSource, type LensParams } from "liquid-glass";
 import { GlassNode } from "liquid-glass/react";
@@ -12,16 +21,19 @@ import {
   Footer,
   GlassLayer,
   Header,
-  ModalGlassCss,
   ModalRoot,
   Surface,
   SurfaceWrap,
   Title,
   glassContentClassName,
   glassNodeClassName,
-  glassSurfaceClassName
+  glassSurfaceClassName,
+  modalGlobalCss
 } from "./styles";
 import type { GlassModalGlassSettings, GlassModalProps } from "./types";
+import { getCanvasBackgroundColor, isTransparentCssColor } from "../../../lib/canvas";
+import { useGlobalCssOnce } from "../../../lib/globalCss";
+import useGlassTheme from "../../../hooks/useGlassTheme";
 
 const EXIT_DURATION_MS = 220;
 const DEFAULT_PORTAL_ID = "__LGDS_GLASS_MODAL_PORTAL__";
@@ -78,6 +90,26 @@ const CloseIcon = () => (
   </svg>
 );
 
+const TABBABLE_SELECTOR = [
+  "a[href]",
+  "area[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+  '[contenteditable="true"]'
+].join(", ");
+
+function getTabbableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR)).filter(
+    (element) =>
+      element.tabIndex !== -1 &&
+      !element.closest('[aria-hidden="true"]') &&
+      (element.offsetWidth > 0 || element.offsetHeight > 0 || element.getClientRects().length > 0)
+  );
+}
+
 const GlassModal = ({
   children,
   className,
@@ -104,9 +136,12 @@ const GlassModal = ({
   style,
   width = 380
 }: GlassModalProps) => {
+  useGlobalCssOnce("lgds-modal", modalGlobalCss);
+  const theme = useGlassTheme();
   const titleId = useId();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const surfaceWrapRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
   const [visible, setVisible] = useState(isVisible);
   const [scale, setScale] = useState(1);
@@ -121,8 +156,18 @@ const GlassModal = ({
     setPortalElement(getPortalElement(portalId));
   }, [portalId]);
 
+  const restorePreviousFocus = useCallback(() => {
+    const target = previousFocusRef.current;
+    previousFocusRef.current = null;
+    if (target && document.contains(target)) {
+      target.focus({ preventScroll: true });
+    }
+  }, []);
+
   useEffect(() => {
     if (isVisible) {
+      previousFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setVisible(true);
       window.setTimeout(() => {
         const focusTarget = initialFocusRef?.current ?? surfaceRef.current;
@@ -131,9 +176,14 @@ const GlassModal = ({
       return undefined;
     }
 
-    const timer = window.setTimeout(() => setVisible(false), EXIT_DURATION_MS);
+    const timer = window.setTimeout(() => {
+      setVisible(false);
+      restorePreviousFocus();
+    }, EXIT_DURATION_MS);
     return () => window.clearTimeout(timer);
-  }, [initialFocusRef, isVisible]);
+  }, [initialFocusRef, isVisible, restorePreviousFocus]);
+
+  useEffect(() => () => restorePreviousFocus(), [restorePreviousFocus]);
 
   useEffect(() => {
     if (!visible || !surfaceWrapRef.current) return undefined;
@@ -160,28 +210,59 @@ const GlassModal = ({
     };
   }, [visible]);
 
-  useEffect(() => {
-    if (!isVisible) return undefined;
-
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") dismiss();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [dismissible, isVisible, onClose]);
-
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     if (dismissible) {
       onClose?.();
     } else {
       setScale(0.98);
       window.setTimeout(() => setScale(1), 80);
     }
-  };
+  }, [dismissible, onClose]);
 
-  const stopKeyPropagation = (event: KeyboardEvent<HTMLDivElement>) => {
+  const trapTabKey = useCallback((event: Pick<globalThis.KeyboardEvent, "preventDefault" | "shiftKey">) => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+
+    const tabbable = getTabbableElements(surface);
+    if (tabbable.length === 0) {
+      event.preventDefault();
+      surface.focus({ preventScroll: true });
+      return;
+    }
+
+    const activeElement =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const activeIndex = activeElement ? tabbable.indexOf(activeElement) : -1;
+
+    if (event.shiftKey) {
+      if (activeIndex <= 0) {
+        event.preventDefault();
+        tabbable[tabbable.length - 1].focus({ preventScroll: true });
+      }
+    } else if (activeIndex === -1 || activeIndex === tabbable.length - 1) {
+      event.preventDefault();
+      tabbable[0].focus({ preventScroll: true });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return undefined;
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        dismiss();
+      } else if (event.key === "Tab") {
+        trapTabKey(event);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dismiss, isVisible, trapTabKey]);
+
+  const handleSurfaceKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") return;
+    if (event.key === "Tab") trapTabKey(event);
     event.stopPropagation();
   };
 
@@ -230,10 +311,16 @@ const GlassModal = ({
 
   return createPortal(
     <ModalRoot $animationState={animationState} className={className}>
-      <ModalGlassCss />
+      {/*
+        When dismissible, the backdrop is an exposed button with an accessible
+        name (kept out of the tab order since the close button already covers
+        keyboard dismissal). When not dismissible it is hidden from assistive
+        technology and unfocusable, so aria-hidden never lands on a focusable
+        element.
+      */}
       <Backdrop
         $dismissible={Boolean(canDismiss)}
-        aria-hidden={!canDismiss}
+        aria-hidden={canDismiss ? undefined : true}
         aria-label={canDismiss ? closeLabel : undefined}
         onClick={dismiss}
         tabIndex={-1}
@@ -244,13 +331,14 @@ const GlassModal = ({
           $hasHeader={hasHeader}
           aria-labelledby={labelledBy}
           aria-modal="true"
-          onKeyDown={stopKeyPropagation}
+          onKeyDown={handleSurfaceKeyDown}
           ref={surfaceRef}
           role="dialog"
           style={
             {
               "--lgds-modal-radius": `${modalLens.radius}px`,
               "--lgds-modal-scale": modalScale,
+              "--lgds-modal-text": theme.component.modalText,
               ...style
             } as CSSProperties
           }
@@ -387,7 +475,7 @@ function createDocumentCanvasSource({
     const viewportWidth = metrics.sourceWidth;
     const viewportHeight = metrics.sourceHeight;
 
-    ctx.fillStyle = getCanvasFallbackBackground(source);
+    ctx.fillStyle = getCanvasBackgroundColor(source);
     ctx.fillRect(0, 0, viewportWidth, viewportHeight);
 
     drawElementBackground(ctx, source, viewportWidth, viewportHeight, onImageLoad);
@@ -520,23 +608,3 @@ function getFirstCssBackgroundImageUrl(backgroundImage: string): string | null {
   return match?.[2] ?? null;
 }
 
-function getCanvasFallbackBackground(source: HTMLElement) {
-  let current: HTMLElement | null = source;
-
-  while (current) {
-    const backgroundColor = getComputedStyle(current).backgroundColor.trim();
-    if (backgroundColor && !isTransparentCssColor(backgroundColor)) return backgroundColor;
-    current = current.parentElement;
-  }
-
-  return "#ffffff";
-}
-
-function isTransparentCssColor(color: string): boolean {
-  return (
-    color === "transparent" ||
-    color === "rgba(0, 0, 0, 0)" ||
-    color === "rgb(0 0 0 / 0)" ||
-    color.endsWith("/ 0)")
-  );
-}

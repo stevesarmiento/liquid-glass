@@ -1,5 +1,5 @@
 import { createTsLiquidGlassEngine } from "./ts-engine";
-import type { GeometryInput, LensParams, LiquidGlassEngine } from "./types";
+import type { GeometryInput, LensGeometry, LensParams, LiquidGlassEngine } from "./types";
 
 interface WasmModule {
   default(input?: RequestInfo | URL | Response | BufferSource | WebAssembly.Module): Promise<unknown>;
@@ -7,12 +7,33 @@ interface WasmModule {
   computeLensGeometry(input: GeometryInput): unknown;
 }
 
+const GEOMETRY_KEYS: Array<keyof LensGeometry> = [
+  "left",
+  "top",
+  "width",
+  "height",
+  "radius",
+  "filterX",
+  "filterY",
+  "filterWidth",
+  "filterHeight",
+  "bleed",
+];
+
+let warnedLoadFailure = false;
+
 export function createWasmLiquidGlassEngine(): LiquidGlassEngine {
   let wasmModule: WasmModule | null = null;
   const fallback = createTsLiquidGlassEngine();
-  const ready = loadWasmModule().then((module) => {
-    wasmModule = module;
-  });
+  const ready = loadWasmModule().then(
+    (module) => {
+      wasmModule = module;
+    },
+    (error) => {
+      warnLoadFailureOnce(error);
+      throw error;
+    },
+  );
 
   return {
     mode: "wasm",
@@ -28,24 +49,45 @@ export function createWasmLiquidGlassEngine(): LiquidGlassEngine {
     },
     computeLensGeometry(input) {
       if (!wasmModule) return fallback.computeLensGeometry(input);
-      return wasmModule.computeLensGeometry(input) as ReturnType<WatchedCompute>;
+      const result = wasmModule.computeLensGeometry(input);
+      // Values crossing the WASM boundary are untyped; fall back to the TS
+      // engine if anything is missing or non-finite.
+      if (!isValidGeometry(result)) return fallback.computeLensGeometry(input);
+      return result;
     },
   };
 }
 
-type WatchedCompute = LiquidGlassEngine["computeLensGeometry"];
+function isValidGeometry(value: unknown): value is LensGeometry {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return GEOMETRY_KEYS.every((key) => {
+    const candidate = record[key];
+    return typeof candidate === "number" && Number.isFinite(candidate);
+  });
+}
 
 async function loadWasmModule(): Promise<WasmModule> {
-  const errors: unknown[] = [];
-  for (const modulePath of ["../../wasm/liquid_glass_core.js", "../wasm/liquid_glass_core.js"]) {
-    try {
-      const module = (await import(/* @vite-ignore */ modulePath)) as WasmModule;
-      await module.default();
-      return module;
-    } catch (error) {
-      errors.push(error);
-    }
-  }
+  // "#wasm" is a Node subpath import (package.json "imports") that resolves
+  // to ./wasm/liquid_glass_core.js. Node, Vite, webpack 5, and esbuild all
+  // understand it, so the wasm-pack glue stays statically resolvable and the
+  // `new URL("liquid_glass_core_bg.wasm", import.meta.url)` inside the glue
+  // can be handled by bundlers.
+  const module = (await import("#wasm")) as WasmModule;
+  await module.default();
+  return module;
+}
 
-  throw new Error(`Unable to load liquid-glass WASM module: ${errors.map(String).join("; ")}`);
+function warnLoadFailureOnce(error: unknown): void {
+  if (warnedLoadFailure) return;
+  warnedLoadFailure = true;
+  const env =
+    typeof process !== "undefined" && process.env ? process.env.NODE_ENV : undefined;
+  if (env === "production" || env === "test") return;
+  if (typeof console !== "undefined") {
+    console.warn(
+      "[liquid-glass] Failed to load the WASM engine; falling back to the TypeScript engine.",
+      error,
+    );
+  }
 }

@@ -9,5 +9,4 @@ The structure follows the Hillside reference:
 - Each component owns `index.tsx`, `styles.ts`, and `types.ts`.
 - `src/constants`, `src/contexts`, `src/hooks`, and `src/lib` hold shared system code.
 
-The first component is `GlassSlider`.
-
+Available components: `GlassSlider`, `GlassSwitch`, and `GlassModal`.

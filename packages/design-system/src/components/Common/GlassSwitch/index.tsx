@@ -22,68 +22,26 @@ import {
   LensSourceBackground,
   Rail,
   SwitchContainer,
-  SwitchCss,
   Thumb,
   Track,
   Visual,
   glassContentClassName,
   glassNodeClassName,
-  glassSurfaceClassName
+  glassSurfaceClassName,
+  switchGlobalCss
 } from "./styles";
 import type { GlassSwitchProps } from "./types";
 import { GLASS_SWITCH_SIZE_PRESETS } from "../sizes";
+import { drawRoundedRect, getCanvasBackgroundColor } from "../../../lib/canvas";
+import { useGlobalCssOnce } from "../../../lib/globalCss";
+import { safeReleasePointerCapture, safeSetPointerCapture } from "../../../lib/pointer";
+import useGlassTheme from "../../../hooks/useGlassTheme";
 
 const ACTIVE_RELEASE_MS = 320;
 const ACTIVE_LENS_SCALE = 1.85;
 const DRAG_THRESHOLD_PX = 4;
-const DEFAULT_FILL_COLOR = "#1a88f8";
-const DEFAULT_TRACK_COLOR = "rgba(148, 163, 184, 0.34)";
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-function drawRoundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-): void {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function isTransparentColor(color: string): boolean {
-  return (
-    color === "transparent" ||
-    color === "rgba(0, 0, 0, 0)" ||
-    color === "rgb(0 0 0 / 0)" ||
-    color.endsWith("/ 0)")
-  );
-}
-
-function getCanvasBackgroundColor(element: HTMLElement | null): string {
-  let current: HTMLElement | null = element;
-
-  while (current) {
-    const backgroundColor = getComputedStyle(current).backgroundColor.trim();
-    if (backgroundColor && !isTransparentColor(backgroundColor)) return backgroundColor;
-    current = current.parentElement;
-  }
-
-  return "#ffffff";
-}
 
 const SwitchVisual = ({ inert = false }: { inert?: boolean }) => (
   <Visual aria-hidden={inert ? "true" : undefined}>
@@ -101,7 +59,7 @@ const GlassSwitch = ({
   defaultChecked = false,
   disabled = false,
   engineMode = "auto",
-  fillColor = DEFAULT_FILL_COLOR,
+  fillColor,
   glassLens,
   glassSurfaceBlur = 0,
   glassTint,
@@ -120,10 +78,14 @@ const GlassSwitch = ({
   size = "md",
   style,
   switchWidth,
-  trackColor = DEFAULT_TRACK_COLOR,
+  trackColor,
   trackHeight,
   ...props
 }: GlassSwitchProps) => {
+  useGlobalCssOnce("lgds-switch", switchGlobalCss);
+  const theme = useGlassTheme();
+  const resolvedFillColor = fillColor ?? theme.component.accent;
+  const resolvedTrackColor = trackColor ?? theme.component.track;
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const labelId = label ? `${inputId}-label` : undefined;
@@ -179,8 +141,8 @@ const GlassSwitch = ({
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
     const hostStyle = getComputedStyle(controlRef.current ?? ctx.canvas);
     const trackColor =
-      hostStyle.getPropertyValue("--lgds-switch-track-bg").trim() || DEFAULT_TRACK_COLOR;
-    const fillColor = hostStyle.getPropertyValue("--lgds-switch-fill-bg").trim() || DEFAULT_FILL_COLOR;
+      hostStyle.getPropertyValue("--lgds-switch-track-bg").trim() || resolvedTrackColor;
+    const fillColor = hostStyle.getPropertyValue("--lgds-switch-fill-bg").trim() || resolvedFillColor;
     const sourceBackground = getCanvasBackgroundColor(controlRef.current ?? ctx.canvas);
     const trackWidth = Math.max(0, metrics.sourceWidth - trackInsetX * 2);
     const trackTop = metrics.sourceHeight / 2 - resolvedTrackHeight / 2;
@@ -385,16 +347,17 @@ const GlassSwitch = ({
           "--lgds-switch-lens-top": `${renderedLensY}px`,
           "--lgds-switch-lens-width": `${renderedLensWidth}px`,
           "--lgds-switch-color-opacity": visualRatio,
-          "--lgds-switch-fill-bg": fillColor,
+          "--lgds-switch-fill-bg": resolvedFillColor,
           "--lgds-switch-track-height": `${resolvedTrackHeight}px`,
-          "--lgds-switch-track-bg": trackColor,
+          "--lgds-switch-track-bg": resolvedTrackColor,
           "--lgds-switch-thumb-inset-x": `${thumbInsetX}px`,
           "--lgds-switch-track-inset-x": `${trackInsetX}px`,
+          "--lgds-switch-text": theme.component.text,
+          "--lgds-switch-muted": theme.component.textMuted,
           ...style
         } as CSSProperties
       }
     >
-      <SwitchCss />
       <Control
         $disabled={disabled}
         aria-checked={currentChecked}
@@ -407,8 +370,8 @@ const GlassSwitch = ({
           setDragRatio(null);
         }}
         onClick={handleControlClick}
-        onKeyDown={onKeyDown as never}
-        onKeyUp={onKeyUp as never}
+        onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
         onLostPointerCapture={handleLostPointerCapture}
         onPointerCancel={handlePointerCancel}
         onPointerDown={handlePointerDown}
@@ -450,14 +413,22 @@ const GlassSwitch = ({
           </Lens>
         </Rail>
       </Control>
+      {/*
+        The hidden checkbox only mirrors form semantics (name/value submission and
+        native change events). The button above already exposes the switch role, so
+        the input is removed from both the tab order and the accessibility tree to
+        avoid duplicate announcements and a second tab stop.
+      */}
       <Input
         {...props}
+        aria-hidden="true"
         checked={currentChecked}
         disabled={disabled}
         id={inputId}
         onBlur={handleBlur}
         onChange={handleChange}
         ref={inputRef}
+        tabIndex={-1}
         type="checkbox"
       />
       {label && <LabelText id={labelId}>{label}</LabelText>}
@@ -468,33 +439,3 @@ const GlassSwitch = ({
 GlassSwitch.displayName = "GlassSwitch";
 
 export default GlassSwitch;
-
-function safeSetPointerCapture(element: Element, pointerId: number): void {
-  if (!("setPointerCapture" in element)) return;
-  try {
-    const pointerElement = element as Element & {
-      hasPointerCapture(pointerId: number): boolean;
-      setPointerCapture(pointerId: number): void;
-    };
-    if (!pointerElement.hasPointerCapture(pointerId)) {
-      pointerElement.setPointerCapture(pointerId);
-    }
-  } catch {
-    // Pointer capture can throw in embedded browsers or interrupted synthetic drags.
-  }
-}
-
-function safeReleasePointerCapture(element: Element, pointerId: number): void {
-  if (!("releasePointerCapture" in element) || !("hasPointerCapture" in element)) return;
-  try {
-    const pointerElement = element as Element & {
-      hasPointerCapture(pointerId: number): boolean;
-      releasePointerCapture(pointerId: number): void;
-    };
-    if (pointerElement.hasPointerCapture(pointerId)) {
-      pointerElement.releasePointerCapture(pointerId);
-    }
-  } catch {
-    // Ignore stale pointer captures after canceled or browser-interrupted drags.
-  }
-}

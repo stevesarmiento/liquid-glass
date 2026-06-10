@@ -95,9 +95,20 @@ cargo install wasm-pack --version 0.13.1 --locked
 Useful commands:
 
 ```sh
-bun run build
-bun run test
-bun run build:wasm
-bun run test:wasm
+bun run build        # turbo run build (JS/TS packages)
+bun run build:wasm   # wasm-pack build of crates/core into packages/liquid-glass/wasm
+bun run build:all    # build + build:wasm
+bun run test         # cargo test + turbo run test (run build:wasm first so parity tests run)
+bun run test:wasm    # wasm-pack test --node crates/core
+bun run typecheck    # turbo run typecheck (tsc --noEmit in every package)
+bun run format:check # prettier check (see .prettierignore; `bun run format` to fix)
 bun run playground
 ```
+
+Releases use [changesets](https://github.com/changesets/changesets): `bun run changeset` to
+record a change, `bun run version` to bump, `bun run release` to build and publish. Only
+`liquid-glass` is publishable; private packages are not versioned.
+
+CI (`.github/workflows/ci.yml`) runs on every push/PR: `cargo test`, the WASM build (so the
+engine parity tests are exercised), then `turbo run build`, `typecheck`, `test`, and the
+prettier format check.

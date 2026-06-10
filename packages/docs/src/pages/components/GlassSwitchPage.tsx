@@ -2,6 +2,28 @@ import { GlassSwitch } from "@liquid-glass/design-system";
 import styled from "styled-components";
 
 import PreviewContainer from "../../components/PreviewContainer";
+import PropsTable, { type PropRow } from "../../components/PropsTable";
+
+const PROP_ROWS: PropRow[] = [
+  { name: "checked", type: "boolean", description: "Controlled checked state." },
+  { name: "defaultChecked", type: "boolean", defaultValue: "false", description: "Initial checked state for uncontrolled switches." },
+  { name: "onCheckedChange", type: "(checked: boolean) => void", description: "Boolean checked callback for controlled or uncontrolled usage." },
+  { name: "onChange", type: "ChangeEventHandler<HTMLInputElement>", description: "Native change handler for the hidden checkbox input." },
+  { name: "label", type: "ReactNode", description: "Text rendered beside the switch." },
+  { name: "size", type: '"sm" | "md" | "lg" | "xl"', defaultValue: '"md"', description: "Preset size for the switch geometry. Manual sizing props override preset values." },
+  { name: "fillColor", type: "string", defaultValue: "theme accent (#1a88f8)", description: "Color used for the switch fill when checked." },
+  { name: "trackColor", type: "string", defaultValue: "theme track", description: "Color used for the unchecked switch track." },
+  { name: "switchWidth", type: "number | string", defaultValue: "size preset", description: "Width of the switch control." },
+  { name: "controlHeight", type: "number", defaultValue: "size preset", description: "Height of the switch interaction area." },
+  { name: "trackHeight", type: "number", defaultValue: "size preset", description: "Height of the switch track." },
+  { name: "active", type: "boolean", description: "Holds the active glass stage for demos or externally controlled interactions." },
+  { name: "disabled", type: "boolean", defaultValue: "false", description: "Disables the switch." },
+  { name: "glassLens", type: "Partial<LensParams>", description: "Glass lens tuning for the thumb node." },
+  { name: "glassTint", type: "GlassTintName | GlassTintInput | GlassTint", description: "Dynamic tint forwarded to the glass thumb node." },
+  { name: "glassSurfaceBlur", type: "number | string", defaultValue: "0", description: "Frosted background blur in px for the glass thumb surface." },
+  { name: "engineMode", type: "LiquidGlassEngineMode", defaultValue: '"auto"', description: "Engine mode forwarded to liquid-glass." },
+  { name: "renderer", type: "GlassRendererMode", description: "Renderer mode forwarded to liquid-glass." },
+];
 
 const Stack = styled.div`
   display: grid;
@@ -85,6 +107,11 @@ export default function GlassSwitchPage() {
   fillColor="#1a88f8"
   size="md"
 />`}</CodeBlock>
+      </div>
+
+      <div>
+        <h2>Props</h2>
+        <PropsTable rows={PROP_ROWS} />
       </div>
     </Stack>
   );

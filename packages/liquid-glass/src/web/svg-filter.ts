@@ -28,8 +28,8 @@ export function createSvgFilter(id: string): SvgFilterElements {
   const isolateR = createSvgElement("feColorMatrix");
   const isolateG = createSvgElement("feColorMatrix");
   const isolateB = createSvgElement("feColorMatrix");
-  const mergeRG = createSvgElement("feBlend");
-  const mergeRGB = createSvgElement("feBlend");
+  const mergeRG = createSvgElement("feComposite");
+  const mergeRGB = createSvgElement("feComposite");
   const specMatrix = createSvgElement("feColorMatrix");
   const specFlood = createSvgElement("feFlood");
   const specComposite = createSvgElement("feComposite");
@@ -95,14 +95,25 @@ export function createSvgFilter(id: string): SvgFilterElements {
   setAttr(isolateB, "values", "0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0");
   setAttr(isolateB, "result", "blueChannel");
 
+  // Recombine the isolated chroma channels additively (k2=1, k3=1), matching
+  // the reverse-engineered original. feBlend "screen" is not additive and
+  // produced washed-out fringes.
   setAttr(mergeRG, "in", "redChannel");
   setAttr(mergeRG, "in2", "greenChannel");
-  setAttr(mergeRG, "mode", "screen");
+  setAttr(mergeRG, "operator", "arithmetic");
+  setAttr(mergeRG, "k1", "0");
+  setAttr(mergeRG, "k2", "1");
+  setAttr(mergeRG, "k3", "1");
+  setAttr(mergeRG, "k4", "0");
   setAttr(mergeRG, "result", "redGreen");
 
   setAttr(mergeRGB, "in", "redGreen");
   setAttr(mergeRGB, "in2", "blueChannel");
-  setAttr(mergeRGB, "mode", "screen");
+  setAttr(mergeRGB, "operator", "arithmetic");
+  setAttr(mergeRGB, "k1", "0");
+  setAttr(mergeRGB, "k2", "1");
+  setAttr(mergeRGB, "k3", "1");
+  setAttr(mergeRGB, "k4", "0");
   setAttr(mergeRGB, "result", "lensResult");
 
   setAttr(specMatrix, "in", "scaledMap");

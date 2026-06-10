@@ -1,4 +1,4 @@
-import styled, { createGlobalStyle, css } from "styled-components";
+import styled, { css } from "styled-components";
 
 export const SliderContainer = styled.label<{
   $disabled?: boolean;
@@ -56,14 +56,6 @@ export const ValueText = styled.span`
   font-variant-numeric: tabular-nums;
 `;
 
-export const Control = styled.span<{ $disabled?: boolean }>`
-  position: relative;
-  display: block;
-  height: var(--lgds-slider-hit-area);
-  cursor: ${({ $disabled }) => ($disabled ? "not-allowed" : "pointer")};
-  touch-action: none;
-`;
-
 export const Rail = styled.span`
   position: absolute;
   inset: 0;
@@ -115,11 +107,14 @@ export const Lens = styled.span<{ $active?: boolean }>`
   border: 1px solid transparent;
   border-radius: var(--lgds-slider-lens-radius);
   box-shadow: none;
-  transition:
-    background-color var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease),
-    border-color var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease),
-    box-shadow var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease),
-    transform var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease);
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition:
+      background-color var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease),
+      border-color var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease),
+      box-shadow var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease),
+      transform var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease);
+  }
 
   &::before,
   &::after {
@@ -130,7 +125,10 @@ export const Lens = styled.span<{ $active?: boolean }>`
     border-radius: inherit;
     content: "";
     opacity: 0;
-    transition: opacity var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease);
+
+    @media (prefers-reduced-motion: no-preference) {
+      transition: opacity var(--lgds-slider-lens-rest-duration) var(--lgds-slider-lens-ease);
+    }
   }
 
   &::before {
@@ -157,16 +155,23 @@ export const Lens = styled.span<{ $active?: boolean }>`
       border-color: transparent;
       box-shadow: none;
       transform: scale(1.14);
-      transition:
-        background-color var(--lgds-slider-lens-active-duration) var(--lgds-slider-lens-ease),
-        border-color var(--lgds-slider-lens-active-duration) var(--lgds-slider-lens-ease),
-        box-shadow var(--lgds-slider-lens-active-duration) var(--lgds-slider-lens-ease),
-        transform var(--lgds-slider-lens-active-duration) var(--lgds-slider-lens-ease);
 
       &::before,
       &::after {
         opacity: 1;
-        transition-duration: var(--lgds-slider-lens-active-duration);
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        transition:
+          background-color var(--lgds-slider-lens-active-duration) var(--lgds-slider-lens-ease),
+          border-color var(--lgds-slider-lens-active-duration) var(--lgds-slider-lens-ease),
+          box-shadow var(--lgds-slider-lens-active-duration) var(--lgds-slider-lens-ease),
+          transform var(--lgds-slider-lens-active-duration) var(--lgds-slider-lens-ease);
+
+        &::before,
+        &::after {
+          transition-duration: var(--lgds-slider-lens-active-duration);
+        }
       }
     `}
 `;
@@ -194,6 +199,19 @@ export const Input = styled.input`
   pointer-events: none;
 `;
 
+export const Control = styled.span<{ $disabled?: boolean }>`
+  position: relative;
+  display: block;
+  height: var(--lgds-slider-hit-area);
+  cursor: ${({ $disabled }) => ($disabled ? "not-allowed" : "pointer")};
+  touch-action: none;
+
+  &:has(${Input}:focus-visible) ${Lens} {
+    outline: 2px solid color-mix(in srgb, var(--lgds-slider-fill-bg) 62%, white);
+    outline-offset: 4px;
+  }
+`;
+
 export const LensSourceBackground = styled.span`
   position: absolute;
   inset: 0;
@@ -204,7 +222,7 @@ export const glassNodeClassName = "lgds-slider__glass-node";
 export const glassContentClassName = "lgds-slider__lens-content";
 export const glassSurfaceClassName = "lgds-slider__lens-glass";
 
-export const SliderCss = createGlobalStyle`
+export const sliderGlobalCss = `
   .${glassNodeClassName} {
     position: absolute;
     inset: 0;
@@ -221,7 +239,7 @@ export const SliderCss = createGlobalStyle`
     inset: 0;
     z-index: 2;
     background:
-      radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight), transparent 68%),
+      radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight) 0%, var(--lg-glass-highlight) var(--lg-glass-highlight-core), transparent var(--lg-glass-highlight-spread)),
       var(--lg-glass-bg);
     border-color: var(--lg-glass-border);
     box-shadow:

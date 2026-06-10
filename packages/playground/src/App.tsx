@@ -16,12 +16,13 @@ import {
   type LiquidGlassEngineMode,
   type LiquidGlassRenderer,
   type LiquidGlassRenderMode,
+  type ResolvedLensParams,
 } from "liquid-glass";
 
 const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
   ["width", "height", "radius", "mapSize"],
   ["scaleX", "scaleY", "chroma", "blur"],
-  ["depth", "dome", "splay", "glow", "edge"],
+  ["depth", "dome", "splay", "glow", "edge", "glowSpread", "glowExponent", "edgeExponent", "specularRotation"],
 ];
 
 const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number; step: number }> = {
@@ -36,12 +37,16 @@ const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number; step:
   splay: { min: 0.001, max: 1, step: 0.001 },
   glow: { min: 0, max: 2, step: 0.01 },
   edge: { min: 0, max: 2, step: 0.01 },
+  glowSpread: { min: 0.05, max: 2, step: 0.01 },
+  glowExponent: { min: 0.1, max: 8, step: 0.05 },
+  edgeExponent: { min: 0.1, max: 8, step: 0.05 },
+  specularRotation: { min: -360, max: 360, step: 1 },
   blur: { min: 0, max: 12, step: 0.1 },
   mapSize: { min: 32, max: 512, step: 32 },
 };
 
 const PAINTING_URL = "/images/rinaldo-armida.jpg";
-const INITIAL_LENS: LensParams = {
+const INITIAL_LENS: ResolvedLensParams = {
   ...DEFAULT_LENS_PARAMS,
   width: 330,
   height: 184,
@@ -59,16 +64,19 @@ const INITIAL_LENS: LensParams = {
 };
 const INITIAL_RENDERER = getInitialRenderer();
 const TINT_NAMES = Object.keys(GLASS_TINTS) as GlassTintName[];
-const INITIAL_CUSTOM_TINT: Required<Pick<GlassTintInput, "color" | "opacity" | "borderOpacity" | "highlightColor" | "highlightWidth" | "highlightHeight" | "highlightX" | "highlightY" | "highlightOpacity" | "shadowOpacity" | "saturation">> = {
+const INITIAL_CUSTOM_TINT: Required<Pick<GlassTintInput, "color" | "opacity" | "borderOpacity" | "highlightColor" | "highlightWidth" | "highlightHeight" | "highlightCore" | "highlightSpread" | "highlightRotation" | "highlightX" | "highlightY" | "highlightOpacity" | "shadowOpacity" | "saturation">> = {
   color: "#6fd7d0",
   opacity: 0.12,
   borderOpacity: 0.48,
   highlightColor: "#ffffff",
   highlightWidth: 1.16,
   highlightHeight: 0.74,
+  highlightCore: 0.36,
+  highlightSpread: 0.68,
+  highlightRotation: -10,
   highlightX: 0.24,
   highlightY: -0.2,
-  highlightOpacity: 0.58,
+  highlightOpacity: 0,
   shadowOpacity: 0.28,
   saturation: 1.18,
 };
@@ -102,7 +110,7 @@ export default function App() {
   const pendingControlsPositionRef = useRef<FloatingControlsPosition>(controlsPositionRef.current);
   const controlsDragRef = useRef<FloatingControlsDrag | null>(null);
   const controlsDragFrameRef = useRef<number | null>(null);
-  const [lens, setLens] = useState<LensParams>(INITIAL_LENS);
+  const [lens, setLens] = useState<ResolvedLensParams>(INITIAL_LENS);
   const [position, setPosition] = useState({ x: 0.61, y: 0.36 });
   const [engineMode, setEngineMode] = useState<LiquidGlassEngineMode>("auto");
   const [tintMode, setTintMode] = useState<TintMode>("custom");
@@ -339,9 +347,13 @@ export default function App() {
             "--glass-tint-highlight": tint.highlight,
             "--glass-highlight-width": formatHighlightPosition(tint.highlightWidth),
             "--glass-highlight-height": formatHighlightPosition(tint.highlightHeight),
+            "--glass-highlight-core": formatHighlightPosition(tint.highlightCore),
+            "--glass-highlight-spread": formatHighlightPosition(tint.highlightSpread),
+            "--glass-highlight-rotation": formatHighlightRotation(tint.highlightRotation),
             "--glass-highlight-x": formatHighlightPosition(tint.highlightX),
             "--glass-highlight-y": formatHighlightPosition(tint.highlightY),
             "--glass-tint-shadow": tint.shadow,
+            "--glass-radius": `${lens.radius}px`,
             left: `${position.x * 100}%`,
             top: `${position.y * 100}%`,
             width: lens.width,
@@ -519,6 +531,9 @@ export default function App() {
                         ["highlightOpacity", 0, 1, 0.01],
                         ["highlightWidth", 0.1, 2.5, 0.01],
                         ["highlightHeight", 0.1, 2, 0.01],
+                        ["highlightCore", 0, 0.9, 0.01],
+                        ["highlightSpread", 0.05, 1.4, 0.01],
+                        ["highlightRotation", -180, 180, 1],
                         ["highlightX", -0.5, 1.5, 0.01],
                         ["highlightY", -0.75, 1.5, 0.01],
                         ["shadowOpacity", 0, 1, 0.01],
@@ -707,6 +722,10 @@ function formatHighlightPosition(value: number): string {
   return `${Math.round(value * 1000) / 10}%`;
 }
 
+function formatHighlightRotation(value: number): string {
+  return `${Math.round(value * 100) / 100}deg`;
+}
+
 function getInitialRenderer(): LiquidGlassRenderer {
   if (typeof window === "undefined") return "auto";
   return new URLSearchParams(window.location.search).get("renderer") === "canvas" ? "canvas" : "auto";
@@ -805,14 +824,31 @@ button, input { font: inherit; }
   top: 0;
   z-index: 8;
   pointer-events: none;
+  overflow: hidden;
   background:
-    radial-gradient(ellipse var(--glass-highlight-width) var(--glass-highlight-height) at var(--glass-highlight-x) var(--glass-highlight-y), var(--glass-tint-highlight), transparent 68%),
+    radial-gradient(ellipse var(--glass-highlight-width) var(--glass-highlight-height) at var(--glass-highlight-x) var(--glass-highlight-y), var(--glass-tint-highlight) 0%, var(--glass-tint-highlight) var(--glass-highlight-core), transparent var(--glass-highlight-spread)),
     var(--glass-tint-bg);
   border: 1px solid var(--glass-tint-border);
   box-shadow:
     0 18px 48px var(--glass-tint-shadow),
     inset 0 1px var(--glass-tint-highlight),
     inset 0 -1px rgba(0, 0, 0, 0.16);
+}
+.glassChrome::before {
+  position: absolute;
+  left: calc(var(--glass-highlight-x) - var(--glass-highlight-width) * 0.34);
+  top: calc(var(--glass-highlight-y) - var(--glass-highlight-height) * 0.39);
+  width: calc(var(--glass-highlight-width) * 0.68);
+  height: calc(var(--glass-highlight-height) * 0.78);
+  border-radius: 999px;
+  pointer-events: none;
+  content: "";
+  background: var(--glass-tint-highlight);
+  filter: blur(10px);
+  opacity: 0.62;
+  transform: rotate(var(--glass-highlight-rotation));
+  mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--glass-highlight-core), transparent var(--glass-highlight-spread));
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--glass-highlight-core), transparent var(--glass-highlight-spread));
 }
 .glassChrome::after {
   position: absolute;

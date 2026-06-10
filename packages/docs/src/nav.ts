@@ -1,4 +1,14 @@
-const menu = [
+export type NavItem = {
+  href: string;
+  label: string;
+};
+
+export type NavGroup = {
+  label: string;
+  items: NavItem[];
+};
+
+const menu: NavGroup[] = [
   {
     label: "Get started",
     items: [
@@ -12,13 +22,6 @@ const menu = [
       { href: "/components/glass-modal", label: "Glass Modal" },
       { href: "/components/glass-slider", label: "Glass Slider" },
       { href: "/components/glass-switch", label: "Glass Switch" },
-    ],
-  },
-  {
-    label: "Foundations",
-    items: [
-      { href: "/foundations/tokens", label: "Tokens", disabled: true },
-      { href: "/foundations/theme", label: "Theme", disabled: true },
     ],
   },
 ];

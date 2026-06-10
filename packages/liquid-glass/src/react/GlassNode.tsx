@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 
-import { createLiquidGlassEngine } from "../engine/create-engine";
+import { getSharedLiquidGlassEngine } from "../engine/create-engine";
 import { normalizeLensParams } from "../engine/defaults";
 import { colorMatrixStringForScale, mapKey } from "../engine/ts-engine";
 import type { LensParams, LiquidGlassEngineMode } from "../engine/types";
@@ -20,10 +20,19 @@ import {
   type GlassRendererMode,
 } from "../web/local-canvas";
 import { displacementMapToPngDataUrl } from "../web/png";
-import { resolveGlassTint, type GlassTint, type GlassTintInput, type GlassTintName } from "../web/tints";
+import { renderLocalGlassWebgl } from "../web/webgl-local";
+import { createWebglGlassRenderer, type WebglGlassRenderer } from "../web/webgl-renderer";
+import {
+  resolveGlassTint,
+  withTintBackgroundAlpha,
+  type GlassTint,
+  type GlassTintInput,
+  type GlassTintName,
+} from "../web/tints";
 import { GlassSurface, type GlassTone } from "./GlassSurface";
+import { ensureLiquidGlassStyles } from "./inject-styles";
 import { useIsSafari } from "./useIsSafari";
-import "./styles.css";
+import { usePrefersReducedTransparency } from "./usePrefersReducedTransparency";
 
 export interface GlassNodeProps {
   lens?: Partial<LensParams>;
@@ -42,6 +51,11 @@ export interface GlassNodeProps {
   surfaceBlur?: number | string;
   tint?: GlassTintName | GlassTintInput | GlassTint;
   safariRefresh?: boolean;
+  /**
+   * When true (the default), honor `prefers-reduced-transparency: reduce` by
+   * skipping refraction and rendering an opaque-ish tinted surface instead.
+   */
+  respectReducedTransparency?: boolean;
   disabled?: boolean;
 }
 
@@ -62,17 +76,28 @@ export function GlassNode({
   surfaceBlur = 0,
   tint: tintInput = "clear",
   safariRefresh = true,
+  respectReducedTransparency = true,
   disabled = false,
 }: GlassNodeProps): ReactElement {
   const id = useId();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const webglRef = useRef<GlassNodeWebglState | null>(null);
   const isSafari = useIsSafari();
+  const prefersReducedTransparency = usePrefersReducedTransparency();
+  const reducedTransparency = respectReducedTransparency && prefersReducedTransparency;
   const [readyVersion, setReadyVersion] = useState(0);
-  const engine = useMemo(() => createLiquidGlassEngine({ mode: engineMode }), [engineMode]);
+  const [mapUrl, setMapUrl] = useState("");
+  const [webglFailed, setWebglFailed] = useState(false);
+  const engine = useMemo(() => getSharedLiquidGlassEngine({ mode: engineMode }), [engineMode]);
   const lens = useMemo(() => normalizeLensParams(lensInput), [JSON.stringify(lensInput ?? {})]);
-  const tint = useMemo(() => resolveGlassTint(tintInput), [JSON.stringify(tintInput)]);
+  const baseTint = useMemo(() => resolveGlassTint(tintInput), [JSON.stringify(tintInput)]);
+  const tint = reducedTransparency ? withTintBackgroundAlpha(baseTint, 0.85) : baseTint;
   const activeRenderer = resolveRenderer({ renderer, isSafari, hasCanvasSource: Boolean(drawSource), hasSvgSource: Boolean(sourceChildren) });
-  const canRender = !disabled && sourceWidth > 0 && sourceHeight > 0;
+  // On the canvas path, "auto"/"webgl" try the GPU first and fall back to the
+  // CPU canvas when WebGL2 is unavailable or the context is lost.
+  const useWebglBackend =
+    activeRenderer === "canvas" && !webglFailed && (renderer === "auto" || renderer === "webgl");
+  const canRender = !disabled && !reducedTransparency && sourceWidth > 0 && sourceHeight > 0;
   const filterBleed = getGlassFilterBleed(lens);
   const filterWidth = sourceWidth + filterBleed * 2;
   const filterHeight = sourceHeight + filterBleed * 2;
@@ -96,10 +121,11 @@ export function GlassNode({
     edge: lens.edge,
   });
   const filterId = `lg-glass-node-filter-${sanitizeId(id)}${safariRefresh ? `-${filterVersion}-${readyVersion}` : ""}`;
-  const mapUrl = useMemo(() => {
-    if (!canRender || activeRenderer !== "svg" || typeof document === "undefined") return "";
-    return displacementMapToPngDataUrl(engine.generateDisplacementMap(lens));
-  }, [activeRenderer, canRender, engine, mapKey(lens), readyVersion]);
+  const lensMapKey = mapKey(lens);
+
+  useEffect(() => {
+    ensureLiquidGlassStyles();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,10 +138,74 @@ export function GlassNode({
     };
   }, [engine]);
 
+  // Generate the displacement map post-commit instead of synchronously during
+  // render; the filter renders neutral (gray flood) until the URL is ready.
+  useEffect(() => {
+    if (!canRender || activeRenderer !== "svg" || typeof document === "undefined") {
+      setMapUrl("");
+      return;
+    }
+    setMapUrl(displacementMapToPngDataUrl(engine.generateDisplacementMap(lens)));
+  }, [activeRenderer, canRender, engine, lensMapKey, readyVersion]);
+
+  // Destroy the GPU renderer (textures, FBOs, programs, context) on unmount.
+  useEffect(
+    () => () => {
+      webglRef.current?.renderer.destroy();
+      webglRef.current = null;
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!canRender || activeRenderer !== "canvas" || !drawSource || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+
+    if (useWebglBackend) {
+      let entry = webglRef.current;
+      if (entry && entry.canvas !== canvas) {
+        entry.renderer.destroy();
+        entry = null;
+        webglRef.current = null;
+      }
+      if (!entry) {
+        const glRenderer = createWebglGlassRenderer(canvas, {
+          onContextLost: () => setWebglFailed(true),
+        });
+        if (!glRenderer) {
+          setWebglFailed(true);
+          return;
+        }
+        entry = { canvas, renderer: glRenderer, sceneCanvas: document.createElement("canvas") };
+        webglRef.current = entry;
+      }
+      const rendered = renderLocalGlassWebgl({
+        renderer: entry.renderer,
+        sceneCanvas: entry.sceneCanvas,
+        engine,
+        lens,
+        sourceWidth,
+        sourceHeight,
+        lensX,
+        lensY,
+        source: drawSource,
+      });
+      if (rendered) return;
+      // The canvas is locked to a webgl2 context now; flag the failure so the
+      // element remounts (via key) and the CPU path gets a fresh canvas.
+      entry.renderer.destroy();
+      webglRef.current = null;
+      setWebglFailed(true);
+      return;
+    }
+
+    // Release any GPU resources left over from a previous webgl backend.
+    if (webglRef.current) {
+      webglRef.current.renderer.destroy();
+      webglRef.current = null;
+    }
     renderLocalGlassCanvas({
-      canvas: canvasRef.current,
+      canvas,
       engine,
       lens,
       sourceWidth,
@@ -135,6 +225,7 @@ export function GlassNode({
     sourceHeight,
     sourceWidth,
     readyVersion,
+    useWebglBackend,
   ]);
 
   const classes = ["lg-glass-node", className].filter(Boolean).join(" ");
@@ -153,6 +244,7 @@ export function GlassNode({
             mapUrl={mapUrl}
           />
           <span
+            aria-hidden="true"
             className={["lg-glass-node__content", contentClassName].filter(Boolean).join(" ")}
             style={
               {
@@ -178,7 +270,14 @@ export function GlassNode({
       ) : null}
 
       {canRender && activeRenderer === "canvas" && drawSource ? (
-        <canvas aria-hidden="true" className="lg-glass-node__canvas" ref={canvasRef} />
+        // Keyed by backend: a canvas whose webgl2 context was created can
+        // never hand out a 2D context, so the CPU fallback needs a fresh node.
+        <canvas
+          aria-hidden="true"
+          className="lg-glass-node__canvas"
+          key={useWebglBackend ? "webgl" : "cpu"}
+          ref={canvasRef}
+        />
       ) : null}
 
       <GlassSurface
@@ -194,8 +293,12 @@ export function GlassNode({
             "--lg-glass-highlight": tint.highlight,
             "--lg-glass-highlight-width": formatHighlightPosition(tint.highlightWidth),
             "--lg-glass-highlight-height": formatHighlightPosition(tint.highlightHeight),
+            "--lg-glass-highlight-core": formatHighlightPosition(tint.highlightCore),
+            "--lg-glass-highlight-spread": formatHighlightPosition(tint.highlightSpread),
+            "--lg-glass-highlight-rotation": formatHighlightRotation(tint.highlightRotation),
             "--lg-glass-highlight-x": formatHighlightPosition(tint.highlightX),
             "--lg-glass-highlight-y": formatHighlightPosition(tint.highlightY),
+            "--lg-glass-radius": formatCssLength(lens.radius),
             "--lg-glass-saturation": tint.saturation,
             "--lg-glass-shadow": tint.shadow,
             "--lg-glass-surface-blur": formatCssLength(surfaceBlur),
@@ -244,7 +347,7 @@ function LocalSvgFilter({
           <feFlood floodColor="rgb(128, 128, 128)" floodOpacity="1" result="mapBg" />
           <feImage
             height={lens.height}
-            href={mapUrl}
+            href={mapUrl || undefined}
             preserveAspectRatio="none"
             result="rawMap"
             width={lens.width}
@@ -305,8 +408,27 @@ function LocalSvgFilter({
             type="matrix"
             values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"
           />
-          <feBlend in="redChannel" in2="greenChannel" mode="screen" result="redGreen" />
-          <feBlend in="redGreen" in2="blueChannel" mode="screen" result="lensResult" />
+          {/* Additive channel recombination (k2=1, k3=1) per the original. */}
+          <feComposite
+            in="redChannel"
+            in2="greenChannel"
+            k1="0"
+            k2="1"
+            k3="1"
+            k4="0"
+            operator="arithmetic"
+            result="redGreen"
+          />
+          <feComposite
+            in="redGreen"
+            in2="blueChannel"
+            k1="0"
+            k2="1"
+            k3="1"
+            k4="0"
+            operator="arithmetic"
+            result="lensResult"
+          />
           <feColorMatrix
             in="scaledMap"
             result="specMask"
@@ -326,6 +448,12 @@ function LocalSvgFilter({
   );
 }
 
+interface GlassNodeWebglState {
+  canvas: HTMLCanvasElement;
+  renderer: WebglGlassRenderer;
+  sceneCanvas: HTMLCanvasElement;
+}
+
 function resolveRenderer({
   renderer,
   isSafari,
@@ -336,8 +464,11 @@ function resolveRenderer({
   isSafari: boolean;
   hasCanvasSource: boolean;
   hasSvgSource: boolean;
-}): Exclude<GlassRendererMode, "auto"> {
-  if (renderer === "canvas" || renderer === "svg") return renderer;
+}): "svg" | "canvas" {
+  if (renderer === "svg") return "svg";
+  // "webgl" renders into the canvas slot; the backend choice happens in the
+  // draw effect (GPU first, CPU fallback).
+  if (renderer === "canvas" || renderer === "webgl") return "canvas";
   if (isSafari && hasCanvasSource) return "canvas";
   if (hasSvgSource) return "svg";
   return "canvas";
@@ -353,4 +484,8 @@ function formatCssLength(value: number | string): string {
 
 function formatHighlightPosition(value: number): string {
   return `${Math.round(value * 1000) / 10}%`;
+}
+
+function formatHighlightRotation(value: number): string {
+  return `${Math.round(value * 100) / 100}deg`;
 }

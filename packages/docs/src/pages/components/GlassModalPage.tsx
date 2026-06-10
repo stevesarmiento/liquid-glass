@@ -3,8 +3,36 @@ import { GlassModal } from "@liquid-glass/design-system";
 import styled from "styled-components";
 
 import PreviewContainer from "../../components/PreviewContainer";
+import PropsTable, { type PropRow } from "../../components/PropsTable";
 
 const PAINTING_URL = "/images/rinaldo-armida.jpg";
+
+const PROP_ROWS: PropRow[] = [
+  { name: "isVisible", type: "boolean", description: "Controls modal visibility. Required." },
+  { name: "onClose", type: "() => void", description: "Called when the modal requests to close (escape, backdrop, close button)." },
+  { name: "dismissible", type: "boolean", defaultValue: "true", description: "Set to false to prevent backdrop, escape, and close-button dismissal." },
+  { name: "header", type: "ReactNode", description: "Header content rendered above the modal body. Strings render as modal titles." },
+  { name: "children", type: "ReactNode", description: "Modal body content." },
+  { name: "footer", type: "ReactNode", description: "Footer content rendered below the modal body." },
+  { name: "closeLabel", type: "string", defaultValue: '"Close modal"', description: "Accessible label for the close button and dismissible backdrop." },
+  { name: "initialFocusRef", type: "RefObject<HTMLElement | null>", defaultValue: "dialog surface", description: "Ref focused when the modal opens." },
+  { name: "width", type: "number | string", defaultValue: "380", description: "Modal width." },
+  { name: "maxWidth", type: "number | string", defaultValue: '"calc(100vw - 32px)"', description: "Maximum modal width." },
+  { name: "stackedOffset", type: "boolean | number", description: "Scales the modal back visually for stacked modal states." },
+  { name: "portalId", type: "string", description: "Custom portal root id." },
+  { name: "glassLens", type: "Partial<LensParams>", description: "Glass lens tuning for the modal surface. Width, height, and radius are size-derived unless provided." },
+  { name: "glassSettings", type: "Partial<GlassModalGlassSettings>", description: "Grouped modal glass tuning. Direct glass props override this when both are provided." },
+  { name: "glassSource", type: "ReactNode", description: "Viewport-sized source content refracted by the modal glass node. Overrides the default app DOM snapshot source." },
+  { name: "glassSourceSelector", type: "string", description: "Selector for the app DOM node cloned as the default modal glass source." },
+  { name: "glassDrawSource", type: "GlassCanvasSource", description: "Canvas source used by Safari/forced canvas rendering." },
+  { name: "glassTint", type: "GlassTintName | GlassTintInput | GlassTint", defaultValue: '"clear"', description: "Dynamic tint forwarded to the glass modal node." },
+  { name: "glassSurfaceBlur", type: "number | string", defaultValue: "0", description: "Frosted background blur in px for the glass modal surface." },
+  { name: "glassSurfaceTone", type: "GlassTone", defaultValue: '"clear"', description: "Base glass surface tone forwarded to the modal node." },
+  { name: "engineMode", type: "LiquidGlassEngineMode", defaultValue: '"auto"', description: "Engine mode forwarded to liquid-glass." },
+  { name: "renderer", type: "GlassRendererMode", description: "Renderer mode forwarded to liquid-glass." },
+  { name: "style", type: "CSSProperties", description: "Style applied to the modal surface." },
+  { name: "className", type: "string", description: "Additional class name for the portal-rendered modal root." },
+];
 
 const Stack = styled.div`
   display: grid;
@@ -116,6 +144,11 @@ export default function GlassModalPage() {
 >
   Modal content
 </GlassModal>`}</CodeBlock>
+      </div>
+
+      <div>
+        <h2>Props</h2>
+        <PropsTable rows={PROP_ROWS} />
       </div>
     </Stack>
   );
