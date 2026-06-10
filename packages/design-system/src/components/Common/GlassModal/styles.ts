@@ -262,7 +262,9 @@ export const ModalGlassCss = createGlobalStyle`
     position: absolute;
     inset: 0;
     z-index: 2;
-    background: linear-gradient(180deg, var(--lg-glass-highlight), transparent 38%), var(--lg-glass-bg);
+    background:
+      radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight), transparent 68%),
+      var(--lg-glass-bg);
     border-color: var(--lg-glass-border);
     box-shadow:
       inset 0 1px 0 var(--lg-glass-highlight),

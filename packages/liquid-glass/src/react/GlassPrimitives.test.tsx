@@ -168,6 +168,10 @@ describe("glass React primitives", () => {
             opacity: 0.2,
             borderOpacity: 0.4,
             highlightOpacity: 0.6,
+            highlightWidth: 1.35,
+            highlightHeight: 0.55,
+            highlightX: 0.7,
+            highlightY: 0.2,
             shadowOpacity: 0.3,
             saturation: 1.5,
           }}
@@ -178,6 +182,10 @@ describe("glass React primitives", () => {
     const surface = host.querySelector(".lg-glass-surface") as HTMLElement;
     expect(surface.style.getPropertyValue("--lg-glass-bg")).toBe("rgba(18, 52, 86, 0.2)");
     expect(surface.style.getPropertyValue("--lg-glass-border")).toBe("rgba(18, 52, 86, 0.4)");
+    expect(surface.style.getPropertyValue("--lg-glass-highlight-width")).toBe("135%");
+    expect(surface.style.getPropertyValue("--lg-glass-highlight-height")).toBe("55%");
+    expect(surface.style.getPropertyValue("--lg-glass-highlight-x")).toBe("70%");
+    expect(surface.style.getPropertyValue("--lg-glass-highlight-y")).toBe("20%");
     expect(surface.style.getPropertyValue("--lg-glass-saturation")).toBe("1.5");
     expect(surface.style.getPropertyValue("--lg-glass-surface-blur")).toBe("6px");
     act(() => root.unmount());

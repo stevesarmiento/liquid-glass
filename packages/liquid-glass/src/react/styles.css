@@ -3,6 +3,10 @@
   --lg-glass-bg: rgba(23, 26, 24, 0.45);
   --lg-glass-border: rgba(255, 255, 255, 0.2);
   --lg-glass-highlight: rgba(255, 255, 255, 0.42);
+  --lg-glass-highlight-width: 116%;
+  --lg-glass-highlight-height: 74%;
+  --lg-glass-highlight-x: 24%;
+  --lg-glass-highlight-y: -20%;
   --lg-glass-saturation: 1.18;
   --lg-glass-shadow: rgba(0, 0, 0, 0.32);
   --lg-glass-surface-blur: 0px;
@@ -12,7 +16,9 @@
   isolation: isolate;
   overflow: hidden;
   color: var(--lg-glass-text);
-  background: linear-gradient(180deg, var(--lg-glass-highlight), transparent 42%), var(--lg-glass-bg);
+  background:
+    radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight), transparent 68%),
+    var(--lg-glass-bg);
   border: 1px solid var(--lg-glass-border);
   backdrop-filter: blur(var(--lg-glass-blur)) saturate(var(--lg-glass-saturation));
   -webkit-backdrop-filter: blur(var(--lg-glass-blur)) saturate(var(--lg-glass-saturation));
@@ -65,13 +71,19 @@
 
 .lg-glass-surface__shine {
   position: absolute;
-  inset: 0;
-  z-index: -1;
+  left: calc(var(--lg-glass-highlight-x) - var(--lg-glass-highlight-width) * 0.34);
+  top: calc(var(--lg-glass-highlight-y) - var(--lg-glass-highlight-height) * 0.39);
+  width: calc(var(--lg-glass-highlight-width) * 0.68);
+  height: calc(var(--lg-glass-highlight-height) * 0.78);
+  z-index: 0;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.4), transparent 30%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.24), transparent 42%, rgba(255, 255, 255, 0.18));
-  opacity: 0.78;
+  background: var(--lg-glass-highlight);
+  border-radius: 999px;
+  filter: blur(10px);
+  opacity: 0.62;
+  transform: rotate(-10deg);
+  mask-image: radial-gradient(ellipse at center, #000 0%, #000 36%, transparent 74%);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, #000 36%, transparent 74%);
 }
 
 .lg-glass-surface__content {
@@ -114,7 +126,9 @@
 .lg-glass-node__surface.lg-glass-surface {
   inset: 0;
   z-index: 2;
-  background: linear-gradient(180deg, var(--lg-glass-highlight), transparent 34%), var(--lg-glass-bg);
+  background:
+    radial-gradient(ellipse var(--lg-glass-highlight-width) var(--lg-glass-highlight-height) at var(--lg-glass-highlight-x) var(--lg-glass-highlight-y), var(--lg-glass-highlight), transparent 68%),
+    var(--lg-glass-bg);
   border-color: var(--lg-glass-border);
   box-shadow:
     0 10px 28px var(--lg-glass-shadow),

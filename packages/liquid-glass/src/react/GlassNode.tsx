@@ -192,6 +192,10 @@ export function GlassNode({
             "--lg-glass-bg": tint.background,
             "--lg-glass-border": tint.border,
             "--lg-glass-highlight": tint.highlight,
+            "--lg-glass-highlight-width": formatHighlightPosition(tint.highlightWidth),
+            "--lg-glass-highlight-height": formatHighlightPosition(tint.highlightHeight),
+            "--lg-glass-highlight-x": formatHighlightPosition(tint.highlightX),
+            "--lg-glass-highlight-y": formatHighlightPosition(tint.highlightY),
             "--lg-glass-saturation": tint.saturation,
             "--lg-glass-shadow": tint.shadow,
             "--lg-glass-surface-blur": formatCssLength(surfaceBlur),
@@ -345,4 +349,8 @@ function sanitizeId(id: string): string {
 
 function formatCssLength(value: number | string): string {
   return typeof value === "number" ? `${Math.max(0, value)}px` : value;
+}
+
+function formatHighlightPosition(value: number): string {
+  return `${Math.round(value * 1000) / 10}%`;
 }

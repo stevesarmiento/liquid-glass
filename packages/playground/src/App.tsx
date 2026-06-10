@@ -59,10 +59,15 @@ const INITIAL_LENS: LensParams = {
 };
 const INITIAL_RENDERER = getInitialRenderer();
 const TINT_NAMES = Object.keys(GLASS_TINTS) as GlassTintName[];
-const INITIAL_CUSTOM_TINT: Required<Pick<GlassTintInput, "color" | "opacity" | "borderOpacity" | "highlightOpacity" | "shadowOpacity" | "saturation">> = {
+const INITIAL_CUSTOM_TINT: Required<Pick<GlassTintInput, "color" | "opacity" | "borderOpacity" | "highlightColor" | "highlightWidth" | "highlightHeight" | "highlightX" | "highlightY" | "highlightOpacity" | "shadowOpacity" | "saturation">> = {
   color: "#6fd7d0",
   opacity: 0.12,
   borderOpacity: 0.48,
+  highlightColor: "#ffffff",
+  highlightWidth: 1.16,
+  highlightHeight: 0.74,
+  highlightX: 0.24,
+  highlightY: -0.2,
   highlightOpacity: 0.58,
   shadowOpacity: 0.28,
   saturation: 1.18,
@@ -332,6 +337,10 @@ export default function App() {
             "--glass-tint-bg": tint.background,
             "--glass-tint-border": tint.border,
             "--glass-tint-highlight": tint.highlight,
+            "--glass-highlight-width": formatHighlightPosition(tint.highlightWidth),
+            "--glass-highlight-height": formatHighlightPosition(tint.highlightHeight),
+            "--glass-highlight-x": formatHighlightPosition(tint.highlightX),
+            "--glass-highlight-y": formatHighlightPosition(tint.highlightY),
             "--glass-tint-shadow": tint.shadow,
             left: `${position.x * 100}%`,
             top: `${position.y * 100}%`,
@@ -491,11 +500,27 @@ export default function App() {
                         onChange={(event) => updateCustomTint("color", event.target.value)}
                       />
                     </label>
+                    <label className="colorControl">
+                      <span>
+                        highlight
+                        <b>{customTint.highlightColor}</b>
+                      </span>
+                      <input
+                        aria-label="custom highlight color"
+                        type="color"
+                        value={customTint.highlightColor}
+                        onChange={(event) => updateCustomTint("highlightColor", event.target.value)}
+                      />
+                    </label>
                     {(
                       [
                         ["opacity", 0, 0.5, 0.01],
                         ["borderOpacity", 0, 1, 0.01],
                         ["highlightOpacity", 0, 1, 0.01],
+                        ["highlightWidth", 0.1, 2.5, 0.01],
+                        ["highlightHeight", 0.1, 2, 0.01],
+                        ["highlightX", -0.5, 1.5, 0.01],
+                        ["highlightY", -0.75, 1.5, 0.01],
                         ["shadowOpacity", 0, 1, 0.01],
                         ["saturation", 0, 3, 0.01],
                       ] as const
@@ -678,6 +703,10 @@ function formatValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
+function formatHighlightPosition(value: number): string {
+  return `${Math.round(value * 1000) / 10}%`;
+}
+
 function getInitialRenderer(): LiquidGlassRenderer {
   if (typeof window === "undefined") return "auto";
   return new URLSearchParams(window.location.search).get("renderer") === "canvas" ? "canvas" : "auto";
@@ -777,7 +806,7 @@ button, input { font: inherit; }
   z-index: 8;
   pointer-events: none;
   background:
-    linear-gradient(180deg, var(--glass-tint-highlight), transparent 34%),
+    radial-gradient(ellipse var(--glass-highlight-width) var(--glass-highlight-height) at var(--glass-highlight-x) var(--glass-highlight-y), var(--glass-tint-highlight), transparent 68%),
     var(--glass-tint-bg);
   border: 1px solid var(--glass-tint-border);
   box-shadow:

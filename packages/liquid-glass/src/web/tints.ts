@@ -5,6 +5,10 @@ export interface GlassTint {
   background: string;
   border: string;
   highlight: string;
+  highlightWidth: number;
+  highlightHeight: number;
+  highlightX: number;
+  highlightY: number;
   shadow: string;
   saturation: number;
 }
@@ -14,6 +18,11 @@ export interface GlassTintInput {
   color?: string;
   opacity?: number;
   borderOpacity?: number;
+  highlightColor?: string;
+  highlightWidth?: number;
+  highlightHeight?: number;
+  highlightX?: number;
+  highlightY?: number;
   highlightOpacity?: number;
   shadowOpacity?: number;
   saturation?: number;
@@ -21,12 +30,21 @@ export interface GlassTintInput {
 
 export type GlassTintPreset = GlassTint & { name: GlassTintName };
 
+const DEFAULT_HIGHLIGHT_X = 0.24;
+const DEFAULT_HIGHLIGHT_Y = -0.2;
+const DEFAULT_HIGHLIGHT_WIDTH = 1.16;
+const DEFAULT_HIGHLIGHT_HEIGHT = 0.74;
+
 export const GLASS_TINTS: Record<GlassTintName, GlassTintPreset> = {
   clear: {
     name: "clear",
     background: "rgba(255, 255, 255, 0.045)",
     border: "rgba(255, 255, 255, 0.5)",
     highlight: "rgba(255, 255, 255, 0.58)",
+    highlightWidth: DEFAULT_HIGHLIGHT_WIDTH,
+    highlightHeight: DEFAULT_HIGHLIGHT_HEIGHT,
+    highlightX: DEFAULT_HIGHLIGHT_X,
+    highlightY: DEFAULT_HIGHLIGHT_Y,
     shadow: "rgba(0, 0, 0, 0.28)",
     saturation: 1.08,
   },
@@ -35,6 +53,10 @@ export const GLASS_TINTS: Record<GlassTintName, GlassTintPreset> = {
     background: "rgba(255, 255, 255, 0.18)",
     border: "rgba(255, 255, 255, 0.62)",
     highlight: "rgba(255, 255, 255, 0.72)",
+    highlightWidth: DEFAULT_HIGHLIGHT_WIDTH,
+    highlightHeight: DEFAULT_HIGHLIGHT_HEIGHT,
+    highlightX: DEFAULT_HIGHLIGHT_X,
+    highlightY: DEFAULT_HIGHLIGHT_Y,
     shadow: "rgba(60, 68, 72, 0.22)",
     saturation: 1.02,
   },
@@ -43,6 +65,10 @@ export const GLASS_TINTS: Record<GlassTintName, GlassTintPreset> = {
     background: "rgba(17, 20, 22, 0.18)",
     border: "rgba(255, 255, 255, 0.28)",
     highlight: "rgba(255, 255, 255, 0.35)",
+    highlightWidth: DEFAULT_HIGHLIGHT_WIDTH,
+    highlightHeight: DEFAULT_HIGHLIGHT_HEIGHT,
+    highlightX: DEFAULT_HIGHLIGHT_X,
+    highlightY: DEFAULT_HIGHLIGHT_Y,
     shadow: "rgba(0, 0, 0, 0.36)",
     saturation: 1.14,
   },
@@ -51,6 +77,10 @@ export const GLASS_TINTS: Record<GlassTintName, GlassTintPreset> = {
     background: "rgba(72, 186, 190, 0.16)",
     border: "rgba(178, 245, 246, 0.56)",
     highlight: "rgba(221, 255, 255, 0.58)",
+    highlightWidth: DEFAULT_HIGHLIGHT_WIDTH,
+    highlightHeight: DEFAULT_HIGHLIGHT_HEIGHT,
+    highlightX: DEFAULT_HIGHLIGHT_X,
+    highlightY: DEFAULT_HIGHLIGHT_Y,
     shadow: "rgba(7, 71, 79, 0.28)",
     saturation: 1.22,
   },
@@ -59,6 +89,10 @@ export const GLASS_TINTS: Record<GlassTintName, GlassTintPreset> = {
     background: "rgba(255, 179, 80, 0.16)",
     border: "rgba(255, 231, 171, 0.58)",
     highlight: "rgba(255, 244, 218, 0.62)",
+    highlightWidth: DEFAULT_HIGHLIGHT_WIDTH,
+    highlightHeight: DEFAULT_HIGHLIGHT_HEIGHT,
+    highlightX: DEFAULT_HIGHLIGHT_X,
+    highlightY: DEFAULT_HIGHLIGHT_Y,
     shadow: "rgba(92, 54, 16, 0.28)",
     saturation: 1.18,
   },
@@ -67,6 +101,10 @@ export const GLASS_TINTS: Record<GlassTintName, GlassTintPreset> = {
     background: "rgba(255, 125, 157, 0.15)",
     border: "rgba(255, 216, 226, 0.56)",
     highlight: "rgba(255, 240, 244, 0.6)",
+    highlightWidth: DEFAULT_HIGHLIGHT_WIDTH,
+    highlightHeight: DEFAULT_HIGHLIGHT_HEIGHT,
+    highlightX: DEFAULT_HIGHLIGHT_X,
+    highlightY: DEFAULT_HIGHLIGHT_Y,
     shadow: "rgba(90, 28, 48, 0.26)",
     saturation: 1.18,
   },
@@ -77,13 +115,18 @@ export function createGlassTint(input: GlassTintInput = {}): GlassTint {
   const opacity = clamp(input.opacity ?? 0.08, 0, 1);
   const borderOpacity = clamp(input.borderOpacity ?? Math.max(0.12, opacity + 0.34), 0, 1);
   const highlightOpacity = clamp(input.highlightOpacity ?? Math.max(0.16, opacity + 0.46), 0, 1);
+  const highlightColor = input.highlightColor ?? "#ffffff";
   const shadowOpacity = clamp(input.shadowOpacity ?? 0.28, 0, 1);
 
   return {
     name: input.name,
     background: colorToRgba(color, opacity),
     border: colorToRgba(color, borderOpacity),
-    highlight: colorToRgba("#ffffff", highlightOpacity),
+    highlight: colorToRgba(highlightColor, highlightOpacity),
+    highlightWidth: clamp(finiteOr(input.highlightWidth, DEFAULT_HIGHLIGHT_WIDTH), 0.1, 2.5),
+    highlightHeight: clamp(finiteOr(input.highlightHeight, DEFAULT_HIGHLIGHT_HEIGHT), 0.1, 2),
+    highlightX: clamp(finiteOr(input.highlightX, DEFAULT_HIGHLIGHT_X), -0.5, 1.5),
+    highlightY: clamp(finiteOr(input.highlightY, DEFAULT_HIGHLIGHT_Y), -0.75, 1.5),
     shadow: colorToRgba("#000000", shadowOpacity),
     saturation: clamp(input.saturation ?? 1.08, 0, 3),
   };
@@ -91,7 +134,15 @@ export function createGlassTint(input: GlassTintInput = {}): GlassTint {
 
 export function resolveGlassTint(input: GlassTintName | GlassTintInput | GlassTint): GlassTint {
   if (typeof input === "string") return GLASS_TINTS[input];
-  if (isResolvedTint(input)) return input;
+  if (isResolvedTint(input)) {
+    return {
+      ...input,
+      highlightWidth: finiteOr(input.highlightWidth, DEFAULT_HIGHLIGHT_WIDTH),
+      highlightHeight: finiteOr(input.highlightHeight, DEFAULT_HIGHLIGHT_HEIGHT),
+      highlightX: finiteOr(input.highlightX, DEFAULT_HIGHLIGHT_X),
+      highlightY: finiteOr(input.highlightY, DEFAULT_HIGHLIGHT_Y),
+    };
+  }
   return createGlassTint(input);
 }
 
@@ -137,4 +188,8 @@ function roundAlpha(value: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function finiteOr(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
