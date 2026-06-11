@@ -1,5 +1,5 @@
 import { type ComponentProps, type PointerEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { GlassButton, GlassDropdown, GlassModal, GlassSlider, GlassSwitch, type GlassComponentSize, type GlassDropdownItem } from "@liquid-glass/design-system";
+import { GlassButton, GlassDropdown, GlassModal, GlassSlider, GlassSwitch, type GlassComponentSize, type GlassDropdownItem, type GlassPressHighlight } from "@liquid-glass/design-system";
 
 import {
   DEFAULT_LENS_PARAMS,
@@ -26,11 +26,13 @@ const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
 ];
 
 const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number; step: number }> = {
-  width: { min: 72, max: 420, step: 1 },
-  height: { min: 48, max: 300, step: 1 },
+  width: { min: 24, max: 420, step: 1 },
+  height: { min: 24, max: 300, step: 1 },
   radius: { min: 0, max: 210, step: 1 },
-  scaleX: { min: 0, max: 60, step: 0.5 },
-  scaleY: { min: 0, max: 60, step: 0.5 },
+  // The engine accepts displacement scales up to 512 — the old cap of 60 was
+  // the main thing limiting how hard the edges could bend.
+  scaleX: { min: 0, max: 240, step: 0.5 },
+  scaleY: { min: 0, max: 240, step: 0.5 },
   chroma: { min: 0, max: 2, step: 0.01 },
   depth: { min: 0, max: 80, step: 0.5 },
   dome: { min: 0, max: 220, step: 1 },
@@ -42,19 +44,31 @@ const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number; step:
   edgeExponent: { min: 0.1, max: 8, step: 0.05 },
   specularRotation: { min: -360, max: 360, step: 1 },
   blur: { min: 0, max: 12, step: 0.1 },
-  mapSize: { min: 32, max: 512, step: 32 },
+  // Map generation is O(size²) but only runs when lens params change (drags
+  // reuse the built map), so big maps are safe for crisp rims on large
+  // elements. Engine cap is 2048.
+  mapSize: { min: 32, max: 1024, step: 32 },
 };
 
 const PAINTING_URL = "/images/rinaldo-armida.jpg";
+type WallpaperId = "painting" | "ferry" | "macaw";
+const WALLPAPERS: Array<{ id: WallpaperId; label: string; url: string }> = [
+  { id: "painting", label: "Painting", url: PAINTING_URL },
+  { id: "ferry", label: "Ferry", url: "/images/IMG_5299.jpeg" },
+  { id: "macaw", label: "Macaw", url: "/images/photo-1452570053594-1b985d6ea890.jpeg" },
+];
 const INITIAL_LENS: ResolvedLensParams = {
   ...DEFAULT_LENS_PARAMS,
   width: 220,
   height: 220,
   radius: 110,
-  scaleX: 28,
-  scaleY: 22,
+  // Rim-heavy refraction: high displacement scale + a tight depth band keeps
+  // the center clear while the edges bend hard. (dome is clamped by the
+  // engine to half the lens size, so 130 already maxes out a 220px lens.)
+  scaleX: 120,
+  scaleY: 120,
   chroma: 0.5,
-  depth: 24,
+  depth: 14,
   dome: 130,
   splay: 0.72,
   glow: 0.75,
@@ -82,6 +96,7 @@ const INITIAL_CUSTOM_TINT: Required<Pick<GlassTintInput, "color" | "opacity" | "
 };
 
 type TintMode = "preset" | "custom";
+type StageMode = "painting" | "iphone";
 type FloatingControlsPosition = { x: number; y: number };
 type FloatingControlsDrag = {
   pointerId: number;
@@ -125,6 +140,10 @@ const VISIBILITY_OPTIONS: Array<{ key: VisibilityKey; label: string }> = [
   { key: "button", label: "Button" },
   { key: "dropdown", label: "Dropdown" },
   { key: "modal", label: "Modal" },
+];
+const STAGE_SCENES: Array<{ id: StageMode; label: string; hint: string }> = [
+  { id: "painting", label: "Painting", hint: "Full-bleed canvas" },
+  { id: "iphone", label: "iPhone 17", hint: "Device frame" },
 ];
 const DROPDOWN_PREVIEW_ITEMS: GlassDropdownItem[] = [
   { id: "view", label: "View painting" },
@@ -170,6 +189,16 @@ export default function App() {
   const [controlsPosition, setControlsPosition] = useState<FloatingControlsPosition>(controlsPositionRef.current);
   const [isControlsDragging, setIsControlsDragging] = useState(false);
   const [visibility, setVisibility] = useState<ComponentVisibility>(INITIAL_VISIBILITY);
+  const [stageMode, setStageMode] = useState<StageMode>("painting");
+  const [sceneMenuOpen, setSceneMenuOpen] = useState(false);
+  const [pressHighlight, setPressHighlight] = useState<GlassPressHighlight>("natural");
+  const [wallpaperId, setWallpaperId] = useState<WallpaperId>("painting");
+  // Wallpaper toggles only apply to the iPhone scene; the full-bleed
+  // painting stage always shows the painting.
+  const backgroundUrl =
+    stageMode === "iphone"
+      ? (WALLPAPERS.find((wallpaper) => wallpaper.id === wallpaperId) ?? WALLPAPERS[0]).url
+      : PAINTING_URL;
   const engine = useMemo(() => createLiquidGlassEngine({ mode: engineMode }), [engineMode]);
   const glassTint = tintMode === "preset" ? tintName : customTint;
   const tint = tintMode === "preset" ? resolveGlassTint(tintName) : createGlassTint(customTint);
@@ -192,7 +221,8 @@ export default function App() {
       edgeExponent: lens.edgeExponent,
       specularRotation: lens.specularRotation,
       blur: Math.min(lens.blur, 3),
-      mapSize: lens.mapSize,
+      // Preview components are <100px — a bigger map is wasted regen cost.
+      mapSize: Math.min(lens.mapSize, 384),
     }),
     [lens],
   );
@@ -211,7 +241,8 @@ export default function App() {
       edgeExponent: lens.edgeExponent,
       specularRotation: lens.specularRotation,
       blur: Math.min(lens.blur, 3),
-      mapSize: lens.mapSize,
+      // Preview components are <100px — a bigger map is wasted regen cost.
+      mapSize: Math.min(lens.mapSize, 384),
     }),
     [lens],
   );
@@ -230,7 +261,8 @@ export default function App() {
       edgeExponent: lens.edgeExponent,
       specularRotation: lens.specularRotation,
       blur: Math.min(lens.blur, 3),
-      mapSize: lens.mapSize,
+      // Preview components are <100px — a bigger map is wasted regen cost.
+      mapSize: Math.min(lens.mapSize, 384),
     }),
     [lens],
   );
@@ -290,13 +322,15 @@ export default function App() {
       tint: glassTint,
       mode: renderMode,
       renderer: INITIAL_RENDERER,
-      sourceImageUrl: PAINTING_URL,
+      sourceImageUrl: backgroundUrl,
       engine,
       onStats: handleStats,
     });
 
     return () => controllerRef.current?.destroy();
-  }, [engine, engineMode]);
+    // stageMode remounts the lens surface (full-bleed stage vs. iPhone
+    // screen), so the controller must rebind to the fresh elements.
+  }, [engine, engineMode, stageMode]);
 
   useEffect(() => {
     controllerRef.current?.update({
@@ -309,9 +343,9 @@ export default function App() {
       tint: glassTint,
       mode: renderMode,
       renderer: INITIAL_RENDERER,
-      sourceImageUrl: PAINTING_URL,
+      sourceImageUrl: backgroundUrl,
     });
-  }, [lens, position, positions, blend, dualLens, renderMode, glassTint]);
+  }, [lens, position, positions, blend, dualLens, renderMode, glassTint, backgroundUrl]);
 
   // The lens position is driven imperatively during drags (no React render
   // per pointermove — Safari can't keep up with a full re-render per frame).
@@ -325,7 +359,7 @@ export default function App() {
       applyLensVisuals(position);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [position, positions, dualLens, lens.width, lens.height, lens.radius]);
+  }, [position, positions, dualLens, lens.width, lens.height, lens.radius, stageMode]);
 
   useLayoutEffect(() => {
     controlsPositionRef.current = controlsPosition;
@@ -520,13 +554,15 @@ export default function App() {
   }
 
   const controlsPanelOpensUp = typeof window !== "undefined" && controlsPosition.y > window.innerHeight - 420;
+  const activeScene = STAGE_SCENES.find((scene) => scene.id === stageMode) ?? STAGE_SCENES[0];
 
-  return (
-    <main className="shell">
-      <style>{styles}</style>
-      <section
+  // The lens surface is the glass controller's container. In painting mode it
+  // fills the stage; in iPhone mode it IS the phone screen, so the painting
+  // becomes the home-screen wallpaper and the lens refracts inside the device.
+  const lensStage = (
+      <div
         ref={containerRef}
-        className="stage"
+        className={stageMode === "iphone" ? "lensSurface iphoneScreen" : "lensSurface lensSurfaceFull"}
         onPointerDown={(event) => {
           safeSetPointerCapture(event.currentTarget, event.pointerId);
           handlePointer(event, true);
@@ -540,12 +576,12 @@ export default function App() {
         <div
           ref={sourceRef}
           className="paintingLayer paintingSource"
-          style={{ backgroundImage: `url(${PAINTING_URL})` }}
+          style={{ backgroundImage: `url(${backgroundUrl})` }}
         />
         <div
           ref={targetRef}
           className={`paintingLayer glassTarget ${visibility.glass ? "" : "glassTargetHidden"}`}
-          style={{ backgroundImage: `url(${PAINTING_URL})` }}
+          style={{ backgroundImage: `url(${backgroundUrl})` }}
         />
         {/* In dual-lens (merged) mode the WebGL/canvas shader draws the
             chrome (backdrop saturation, tint fill, border, angular rim
@@ -630,11 +666,12 @@ export default function App() {
                 {SWITCH_PREVIEW_SIZES.map((buttonSize) => (
                   <GlassButton
                     engineMode={engineMode}
-                    glassBackdrop={{ image: PAINTING_URL, anchor: containerRef }}
+                    glassBackdrop={{ image: backgroundUrl, anchor: containerRef }}
                     glassLens={buttonLens}
                     glassSurfaceBlur={0}
                     glassTint={glassTint}
                     key={buttonSize}
+                    pressHighlight={pressHighlight}
                     renderer={INITIAL_RENDERER}
                     size={buttonSize}
                   >
@@ -653,11 +690,12 @@ export default function App() {
                   blend={blend}
                   engineMode={engineMode}
                   gap={dropdownGap}
-                  glassBackdrop={{ image: PAINTING_URL, anchor: containerRef }}
+                  glassBackdrop={{ image: backgroundUrl, anchor: containerRef }}
                   glassLens={dropdownLens}
                   glassTint={glassTint}
                   items={DROPDOWN_PREVIEW_ITEMS}
                   label="Open dropdown menu"
+                  pressHighlight={pressHighlight}
                 />
               </div>
             )}
@@ -670,8 +708,90 @@ export default function App() {
             )}
           </div>
         )}
-        <div className="attribution">Giovanni Battista Tiepolo, Rinaldo and Armida in Her Garden</div>
+        {stageMode === "iphone" && (
+          <>
+            <div className="dynamicIsland" aria-hidden="true" />
+            <div className="homeIndicator" aria-hidden="true" />
+          </>
+        )}
+      </div>
+  );
+
+  return (
+    <main className="shell">
+      <style>{styles}</style>
+      <section className={`stage${stageMode === "iphone" ? " stageIphone" : ""}`}>
+        {stageMode === "iphone" ? (
+          <div className="iphoneFrame">
+            <span className="iphoneButton actionButton" aria-hidden="true" />
+            <span className="iphoneButton volumeUp" aria-hidden="true" />
+            <span className="iphoneButton volumeDown" aria-hidden="true" />
+            <span className="iphoneButton powerButton" aria-hidden="true" />
+            <span className="iphoneButton cameraControl" aria-hidden="true" />
+            <div className="iphoneBezel">{lensStage}</div>
+          </div>
+        ) : (
+          lensStage
+        )}
+        {backgroundUrl === PAINTING_URL && (
+          <div className="attribution">Giovanni Battista Tiepolo, Rinaldo and Armida in Her Garden</div>
+        )}
       </section>
+
+      <div className="sceneSwitcher">
+        {stageMode === "iphone" && (
+          <div aria-label="iPhone wallpaper" className="wallpaperSwatches" role="radiogroup">
+            {WALLPAPERS.map((wallpaper) => (
+              <button
+                aria-checked={wallpaperId === wallpaper.id}
+                aria-label={`Use ${wallpaper.label} wallpaper`}
+                className={wallpaperId === wallpaper.id ? "wallpaperSwatch active" : "wallpaperSwatch"}
+                key={wallpaper.id}
+                onClick={() => setWallpaperId(wallpaper.id)}
+                role="radio"
+                style={{ backgroundImage: `url(${wallpaper.url})` }}
+                title={wallpaper.label}
+                type="button"
+              />
+            ))}
+          </div>
+        )}
+        <button
+          aria-expanded={sceneMenuOpen}
+          aria-haspopup="menu"
+          className="sceneTrigger"
+          onClick={() => setSceneMenuOpen((current) => !current)}
+          type="button"
+        >
+          <span>{activeScene.label}</span>
+          <svg aria-hidden="true" viewBox="0 0 20 20">
+            <path d="M6 8l4 4 4-4" />
+          </svg>
+        </button>
+        {sceneMenuOpen && (
+          <>
+            <div className="sceneMenuBackdrop" onClick={() => setSceneMenuOpen(false)} />
+            <div className="sceneMenu" role="menu">
+              {STAGE_SCENES.map((scene) => (
+                <button
+                  aria-checked={scene.id === stageMode}
+                  className={scene.id === stageMode ? "active" : ""}
+                  key={scene.id}
+                  onClick={() => {
+                    setStageMode(scene.id);
+                    setSceneMenuOpen(false);
+                  }}
+                  role="menuitemradio"
+                  type="button"
+                >
+                  <span>{scene.label}</span>
+                  <small>{scene.hint}</small>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       <GlassModal
         footer={
@@ -771,6 +891,27 @@ export default function App() {
                           type="checkbox"
                         />
                       </label>
+                    ))}
+                  </div>
+                  {/* Press highlight style for the button + dropdown previews:
+                      natural = the glass itself (boosted optics/saturation),
+                      additive = the overexposure bloom + cursor light. */}
+                  <label>
+                    <span>
+                      press highlight
+                      <b>{pressHighlight}</b>
+                    </span>
+                  </label>
+                  <div className="segments tintMode">
+                    {(["natural", "additive"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        className={pressHighlight === mode ? "active" : ""}
+                        onClick={() => setPressHighlight(mode)}
+                        type="button"
+                      >
+                        {mode}
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -1092,7 +1233,8 @@ function getInitialControlsPosition(): FloatingControlsPosition {
 
   return constrainControlsPosition({
     x: window.innerWidth - FLOATING_CONTROLS_WIDTH - 20,
-    y: 20,
+    // Sits below the fixed scene switcher pill in the top-right corner.
+    y: 64,
   });
 }
 
@@ -1159,6 +1301,237 @@ button, input { font: inherit; }
   background: #15120e;
   touch-action: none;
 }
+.stage.stageIphone {
+  display: grid;
+  place-items: center;
+  cursor: default;
+  background: #0a0a0c;
+}
+.stage.stageIphone::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background-image: radial-gradient(circle, rgba(255,255,255,0.13) 1px, transparent 1.6px);
+  background-size: 24px 24px;
+  background-position: 12px 12px;
+  mask-image: radial-gradient(ellipse 85% 85% at 50% 50%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 85% at 50% 50%, #000 30%, transparent 100%);
+}
+.stage.stageIphone::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background: radial-gradient(ellipse 46% 54% at 50% 46%, rgba(120, 140, 180, 0.1), transparent 70%);
+}
+.lensSurfaceFull {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+.iphoneFrame {
+  position: relative;
+  z-index: 2;
+  height: min(86vh, 800px);
+  aspect-ratio: 392 / 800;
+  padding: 4px;
+  border-radius: 64px;
+  background: linear-gradient(150deg, #5c5c62 0%, #2e2e33 30%, #202024 55%, #4c4c52 100%);
+  box-shadow:
+    0 50px 110px rgba(0, 0, 0, 0.6),
+    0 16px 40px rgba(0, 0, 0, 0.45),
+    inset 0 0 1.5px 1px rgba(255, 255, 255, 0.22);
+}
+.iphoneBezel {
+  height: 100%;
+  padding: 8px;
+  border-radius: 60px;
+  background: #050505;
+}
+.iphoneScreen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 52px;
+  background: #000;
+  cursor: crosshair;
+  touch-action: none;
+  isolation: isolate;
+}
+.iphoneButton {
+  position: absolute;
+  width: 3.5px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #4c4c52, #28282d 50%, #44444a);
+  box-shadow: inset 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.iphoneButton.actionButton { left: -3px; top: 16%; height: 30px; }
+.iphoneButton.volumeUp { left: -3px; top: 23.5%; height: 56px; }
+.iphoneButton.volumeDown { left: -3px; top: 32.5%; height: 56px; }
+.iphoneButton.powerButton { right: -3px; top: 25.5%; height: 90px; }
+.iphoneButton.cameraControl { right: -3px; top: 60%; height: 44px; }
+.dynamicIsland {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  z-index: 9;
+  width: 122px;
+  height: 36px;
+  pointer-events: none;
+  transform: translateX(-50%);
+  border-radius: 22px;
+  background: #000;
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.85),
+    inset 0 0 3px rgba(255, 255, 255, 0.05);
+}
+.dynamicIsland::after {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  content: "";
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 34%, #20304c 0%, #0a1020 55%, #000 100%);
+  box-shadow: inset 0 0 2px rgba(120, 160, 255, 0.28);
+}
+.homeIndicator {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  z-index: 9;
+  width: 118px;
+  height: 5px;
+  pointer-events: none;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.28);
+}
+.sceneSwitcher {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wallpaperSwatches {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 18px;
+  background: #1a1a1a;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: panelIn 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.wallpaperSwatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background-position: center;
+  background-size: cover;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  transition:
+    outline-color 140ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.wallpaperSwatch:hover { transform: scale(1.08); }
+.wallpaperSwatch:active { transform: scale(0.9); }
+.wallpaperSwatch.active {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.sceneTrigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 10px 0 14px;
+  border: 0;
+  border-radius: 18px;
+  background: #1a1a1a;
+  color: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition:
+    background-color 150ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.sceneTrigger:hover { background: #232323; }
+.sceneTrigger:active { transform: scale(0.97); }
+.sceneTrigger svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.6;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.sceneTrigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.sceneMenuBackdrop {
+  position: fixed;
+  inset: 0;
+}
+.sceneMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  display: grid;
+  gap: 4px;
+  width: 192px;
+  padding: 6px;
+  border-radius: 14px;
+  background: #1c1c1c;
+  box-shadow:
+    0 1px 8px rgba(0, 0, 0, 0.25),
+    0 18px 48px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  animation: panelIn 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.sceneMenu button {
+  display: grid;
+  gap: 2px;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 580;
+  text-align: left;
+  transition: background-color 130ms ease;
+}
+.sceneMenu button small {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-weight: 480;
+}
+.sceneMenu button:hover { background: rgba(255, 255, 255, 0.07); }
+.sceneMenu button.active { background: rgba(255, 255, 255, 0.11); }
 .paintingLayer {
   position: absolute;
   inset: 0;
@@ -1717,5 +2090,8 @@ button, input { font: inherit; }
     gap: 8px;
   }
   .attribution { display: none; }
+  .iphoneFrame { height: min(76vh, 700px); border-radius: 54px; }
+  .iphoneBezel { padding: 6px; border-radius: 50px; }
+  .iphoneScreen { border-radius: 44px; }
 }
 `;

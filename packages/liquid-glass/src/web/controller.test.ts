@@ -587,7 +587,8 @@ describe("LiquidGlassController", () => {
       expect(uniforms).toContain(
         `uniform4f:u_borderColor=${178 / 255},${245 / 255},${246 / 255},0.56`,
       );
-      expect(uniforms).toContain("uniform1f:u_borderWidth=1.5");
+      // Matches the CSS chrome's 1px border (see chromeForTint).
+      expect(uniforms).toContain("uniform1f:u_borderWidth=1");
       // Preset highlights are transparent → rim strength floored at the
       // subtle-top-rim fallback (0.18).
       expect(uniforms).toContain("uniform1f:u_highlightStrength=0.18");

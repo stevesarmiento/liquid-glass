@@ -113,6 +113,14 @@ uniform vec2 u_glowAnchor;       // gradient anchor as fractions of the lens box
 uniform vec2 u_glowRadii;        // gradient radii as fractions of lens w/h
 uniform float u_glowRotation;    // hot-spot rotation in radians (CSS clockwise)
 uniform float u_saturation;      // backdrop saturation; 1 = no-op
+// Press illumination (merged mode only): a uniform brightness lift inside
+// the blob ("the light turns on") plus a pointer-anchored interior light.
+// Both are evaluated inside the blob mask, so they are clipped by — and
+// morph with — the deformed glass, unlike a DOM overlay.
+uniform float u_innerBrightness; // 0 = no-op; 0..1 lift toward white
+uniform vec4 u_innerLight;       // rgb light color, a = strength (0 disables)
+uniform vec2 u_innerLightPos;    // light center in region px (CSS space)
+uniform float u_innerLightRadius; // falloff radius in px
 uniform vec4 u_shadowColor;      // straight alpha; a = 0 disables the shadow
 uniform vec2 u_shadowOffset;     // CSS px offset the shadow is cast toward
 uniform float u_shadowBlur;      // px fade of the shadow past the blob edge
@@ -219,6 +227,17 @@ void main() {
         glow = max(glow, clamp(t1 + 0.62 * t2, 0.0, 1.0));
       }
       color = mix(color, u_glowColor.rgb, glow * u_glowColor.a);
+    }
+    // Press illumination: the pointer-anchored light first (it has its own
+    // radial falloff — the glass knows where the source is), then the
+    // uniform brightness lift, so the whole blob reads as lit from within.
+    if (u_innerLight.a > 0.0) {
+      float lightR = max(u_innerLightRadius, 1.0);
+      float fall = 1.0 - smoothstep(0.0, lightR, length(local - u_innerLightPos));
+      color = mix(color, u_innerLight.rgb, fall * fall * u_innerLight.a);
+    }
+    if (u_innerBrightness > 0.0) {
+      color = mix(color, vec3(1.0), u_innerBrightness);
     }
     // Border band -u_borderWidth < d < 0, antialiased on both edges (the
     // outer fade also tracks the blob mask itself).

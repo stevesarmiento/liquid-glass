@@ -77,23 +77,13 @@ export const TriggerButton = styled.button<{ $fallback: boolean }>`
   }
 `;
 
-/**
- * Clip layer for the press visuals (overexposure bloom + cursor light from
- * GlassPressEffects): exactly the trigger circle, above the goo canvas — the
- * glass face — and below TriggerIcon, so the icon stays crisp.
- */
-export const TriggerPressClip = styled.span`
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  overflow: hidden;
-  border-radius: 999px;
-  pointer-events: none;
-`;
+/* Press visuals are shader chrome (innerBrightness + innerLight in the goo
+   render), not DOM — a DOM clip layer would stay a rigid circle while the
+   glass deforms. */
 
 export const TriggerIcon = styled.span`
   position: relative;
-  /* Above TriggerPressClip — the icon is content ON the glass. */
+  /* Above the goo canvas — the icon is content ON the glass. */
   z-index: 2;
   display: grid;
   place-items: center;
@@ -106,6 +96,18 @@ export const TriggerIcon = styled.span`
   svg {
     display: block;
   }
+`;
+
+/**
+ * Carrier for the trigger-grab icon parallax. Nested inside TriggerIcon
+ * because the press scale owns TriggerIcon's inline transform — two writers
+ * on one element would fight, so the transforms compose by nesting (the same
+ * rule as GlassButton's GrabLayer/Lens). Deliberately no transition: the grab
+ * spring writes the transform per frame.
+ */
+export const TriggerIconInner = styled.span`
+  display: grid;
+  place-items: center;
 `;
 
 export const Menu = styled.div<{ $fallback: boolean; $interactive: boolean; $visible: boolean }>`

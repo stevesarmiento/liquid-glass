@@ -30,10 +30,8 @@ import {
   type WebglGlassRenderer
 } from "liquid-glass";
 import {
-  GlassPressEffects,
   createSpring,
   isGlassActivationKey,
-  updateGlassPointerLight,
   useGlassGrab,
   useGlassHoverTint,
   useGlassPress,
@@ -50,7 +48,7 @@ import {
   MenuItemLabel,
   TriggerButton,
   TriggerIcon,
-  TriggerPressClip
+  TriggerIconInner
 } from "./styles";
 import type { GlassDropdownItem, GlassDropdownPlacement, GlassDropdownProps } from "./types";
 import { computeCoverSlice, getCanvasBackgroundColor } from "../../../lib/canvas";
@@ -94,14 +92,32 @@ const PRESS_TWEEN_OUT_MS = 260;
 const PRESSED_OPTICS_SCALE = 1.15;
 const PRESSED_GLOW_BOOST = 0.45;
 const MAX_GLOW = 2;
-/** Peak opacity of the press overexposure bloom. */
-const PRESS_EXPOSURE = 0.34;
 /** Hover = denser, more saturated tint expressed in the glass chrome. */
 const HOVER_TINT_OPACITY_BOOST = 0.06;
 const HOVER_SATURATION_SCALE = 1.4;
 /** Extra chrome saturation at full press, layered on the hover/rest tint. */
 const PRESS_SATURATION_BOOST = 0.9;
 const MAX_SATURATION = 3;
+/**
+ * Press illumination, expressed in the glass itself (shader chrome — NEVER a
+ * DOM overlay, which would stay a rigid circle while the goo deforms):
+ * a uniform brightness lift across the blob ("the light turns on") plus a
+ * pointer-anchored interior light, so the glass knows where the source is.
+ * Keyboard presses anchor the light at the trigger center.
+ *
+ * `pressHighlight` picks the intensity, not the mechanism: "natural" is the
+ * material's own subtle response; "additive" is the hotter, bloom-like
+ * grade (the overexposure look GlassButton's DOM layer gives) — but still
+ * rendered in the glass, so both morph with the trigger.
+ */
+const PRESS_ILLUMINATION: Record<
+  "natural" | "additive",
+  { brightness: number; light: number }
+> = {
+  natural: { brightness: 0.1, light: 0.3 },
+  additive: { brightness: 0.26, light: 0.5 }
+};
+const PRESS_LIGHT_RADIUS_PX = 110;
 /**
  * Press squish, expressed in the merged map itself: at full press the trigger
  * lens (L0) compresses vertically ~2.5% with a +1% width gain for volume.
@@ -120,8 +136,17 @@ const HOVER_SPRING = { stiffness: 170, damping: 26 };
 /** Press cue on the trigger icon (content on glass — the goo face is below).
  * Same 0.98 active scale GlassButton applies, but driven by the press tween
  * (works for keyboard presses too) and applied to the icon span ONLY — the
- * canvas-painted glass face must not DOM-scale; it squishes in the map. */
+ * canvas-painted glass face must not DOM-scale; it dips in the map instead
+ * (PRESS_FACE_SCALE below). */
 const PRESS_ICON_SCALE = 0.98;
+/**
+ * GlassButton's root :active scale(0.98) compresses the ENTIRE glass face,
+ * lens included. The trigger's face is canvas-painted, so the same dip is
+ * expressed in the merged map: L0 shrinks uniformly along the press tween,
+ * with the anisotropic squish composing on top. Without this the glass reads
+ * rigid under the finger — only the icon moved.
+ */
+const PRESS_FACE_SCALE = 0.98;
 /**
  * Grab-the-material on the OPEN menu: press-and-drag does not move the menu,
  * it elastically deforms the actual lens. The rubberbanded deflection from
@@ -140,6 +165,23 @@ const MENU_GRAB_CENTER_FACTOR = 0.6;
 const MENU_GRAB_SIZE_FACTOR = 0.5;
 /** Content parallax: the items ride lighter than the glass itself. */
 const MENU_GRAB_CONTENT_FACTOR = 0.3;
+/**
+ * Grab-the-material on the TRIGGER — the piece of GlassButton parity that was
+ * missing: press-and-drag does not move the trigger, it elastically stretches
+ * the glass toward the pull and bounces back on release. Like the press
+ * squish, it is expressed in the merged map itself (lens L0 shifts toward the
+ * pull and grows along the pulled axes, so the goo neck reacts too) — the
+ * canvas-painted face must not DOM-transform. Same deflection asymptote as
+ * GlassButton's grab (8px); the icon (content ON the glass) rides a lighter
+ * parallax, mirroring the menu items.
+ */
+const TRIGGER_GRAB_MAX_PX = 8;
+/** Fraction of the deflection applied to the trigger lens center. */
+const TRIGGER_GRAB_CENTER_FACTOR = 0.6;
+/** Lens growth per px of |deflection| along each axis (stretch toward the pull). */
+const TRIGGER_GRAB_SIZE_FACTOR = 0.5;
+/** Icon parallax: the icon rides lighter than the glass itself. */
+const TRIGGER_GRAB_CONTENT_FACTOR = 0.3;
 
 /**
  * Resting optics for the merged map. Tuned for the dropdown's scale: a
@@ -178,7 +220,10 @@ function chromeForTint(tint: GlassTint): WebglGlassChrome {
   return {
     tint: parseCssColor(tint.background) ?? [0, 0, 0, 0],
     border: parseCssColor(tint.border) ?? [0, 0, 0, 0],
-    borderWidth: 1.5,
+    // Match the CSS chrome's `border: 1px solid` (GlassButton, single-lens
+    // draggable). The shader AA softens both edges of the band, so anything
+    // wider reads visibly fatter than the CSS border.
+    borderWidth: 1,
     highlight: highlight ? [highlight[0], highlight[1], highlight[2]] : [1, 1, 1],
     highlightStrength: Math.max(highlight ? highlight[3] : 0, MIN_RIM_STRENGTH),
     lightDir: rotateDir(lightDirFromHighlight(tint.highlightX, tint.highlightY), tint.highlightRotation),
@@ -323,6 +368,10 @@ function computeLayout(
  * way: its center shifts toward the pull and it grows along the pulled axes,
  * so dragging the open menu stretches the actual lens — and the goo neck —
  * instead of moving the panel.
+ *
+ * `triggerGrabDx`/`triggerGrabDy` apply the identical treatment to L0: a
+ * press-and-drag on the trigger stretches the trigger glass itself (radius
+ * pinned to the deformed shape so it stays a capsule).
  */
 function lensesAt(
   p: number,
@@ -330,17 +379,26 @@ function lensesAt(
   triggerSize: number,
   pressProgress: number,
   grabDx: number,
-  grabDy: number
+  grabDy: number,
+  triggerGrabDx: number,
+  triggerGrabDy: number
 ): MergedLensShape[] {
   const collapsed = triggerSize * COLLAPSED_LENS_FRACTION;
-  const squishedHeight = triggerSize * (1 - PRESS_SQUISH_Y * pressProgress);
+  // Uniform press dip (GlassButton's :active scale) first, then the
+  // anisotropic squish on top of the dipped size.
+  const pressedSize = triggerSize * (1 - (1 - PRESS_FACE_SCALE) * pressProgress);
+  const squishedHeight = pressedSize * (1 - PRESS_SQUISH_Y * pressProgress);
+  const triggerWidth =
+    pressedSize * (1 + PRESS_SQUISH_X * pressProgress) +
+    Math.abs(triggerGrabDx) * TRIGGER_GRAB_SIZE_FACTOR;
+  const triggerHeight = squishedHeight + Math.abs(triggerGrabDy) * TRIGGER_GRAB_SIZE_FACTOR;
   return [
     {
-      x: layout.trigger.cx,
-      y: layout.trigger.cy,
-      width: triggerSize * (1 + PRESS_SQUISH_X * pressProgress),
-      height: squishedHeight,
-      radius: squishedHeight / 2
+      x: layout.trigger.cx + triggerGrabDx * TRIGGER_GRAB_CENTER_FACTOR,
+      y: layout.trigger.cy + triggerGrabDy * TRIGGER_GRAB_CENTER_FACTOR,
+      width: triggerWidth,
+      height: triggerHeight,
+      radius: Math.min(triggerWidth, triggerHeight) / 2
     },
     {
       x: lerp(layout.trigger.cx, layout.menu.cx, p) + grabDx * MENU_GRAB_CENTER_FACTOR,
@@ -385,6 +443,12 @@ interface GooState {
   /** Rubberbanded grab deflection (px), fed by useGlassGrab's onDeflection. */
   grabDx: number;
   grabDy: number;
+  /** Trigger grab deflection (px) — deforms lens L0 the way grabDx/Dy deform L1. */
+  triggerGrabDx: number;
+  triggerGrabDy: number;
+  /** Last pointer position in region px (null until the pointer visits). */
+  pointerX: number | null;
+  pointerY: number | null;
 }
 
 /** Everything drawFrame needs, refreshed every render (latest-ref pattern). */
@@ -404,6 +468,7 @@ interface DrawInput {
   backdropUrl: string | undefined;
   anchor: RefObject<HTMLElement | null> | undefined;
   engineMode: NonNullable<GlassDropdownProps["engineMode"]>;
+  pressHighlight: NonNullable<GlassDropdownProps["pressHighlight"]>;
 }
 
 const GlassDropdown = ({
@@ -424,6 +489,7 @@ const GlassDropdown = ({
   onSelect,
   open,
   placement = "bottom-start",
+  pressHighlight = "natural",
   triggerSize = 48
 }: GlassDropdownProps) => {
   const theme = useGlassTheme();
@@ -502,7 +568,11 @@ const GlassDropdown = ({
       hoverRaf: null,
       hoverLastTime: null,
       grabDx: 0,
-      grabDy: 0
+      grabDy: 0,
+      triggerGrabDx: 0,
+      triggerGrabDy: 0,
+      pointerX: null,
+      pointerY: null
     };
     gooRef.current.spring.position = isOpen ? 1 : 0;
     gooRef.current.spring.target = isOpen ? 1 : 0;
@@ -520,7 +590,8 @@ const GlassDropdown = ({
     boostLens: press.boostLens,
     backdropUrl: glassBackdrop?.image,
     anchor: glassBackdrop?.anchor,
-    engineMode
+    engineMode,
+    pressHighlight
   };
 
   /** Re-slices the backdrop into the scratch scene canvas (cover-aligned). */
@@ -585,7 +656,16 @@ const GlassDropdown = ({
     const p = clamp(goo.spring.position, 0, MAX_LENS_PROGRESS);
     const pressP = clamp(input.pressProgress, 0, 1);
     const layoutNow = input.layout;
-    const lenses = lensesAt(p, layoutNow, input.triggerSize, pressP, goo.grabDx, goo.grabDy);
+    const lenses = lensesAt(
+      p,
+      layoutNow,
+      input.triggerSize,
+      pressP,
+      goo.grabDx,
+      goo.grabDy,
+      goo.triggerGrabDx,
+      goo.triggerGrabDy
+    );
     // Pressing boosts the goo's SHARED optics along the press tween — the
     // whole connected blob breathes, which is correct: it is one piece of
     // glass. The boosted glow and squished L0 are map inputs, so press-tween
@@ -629,7 +709,22 @@ const GlassDropdown = ({
         saturation: Math.min(
           MAX_SATURATION,
           (chrome.saturation ?? 1) * (1 + PRESS_SATURATION_BOOST * pressP)
-        )
+        ),
+        // Press illumination in the glass itself: the whole blob brightens
+        // ("the light turns on") and a pointer-anchored interior light makes
+        // the material aware of where the source is. Both ride the press
+        // tween and are clipped by the blob SDF, so they morph with the
+        // squished/grabbed trigger — unlike a DOM overlay. Keyboard presses
+        // (no pointer yet) anchor the light at the trigger lens center.
+        // pressHighlight only changes the grade: additive = the hot,
+        // bloom-like values; natural = the subtler material response.
+        innerBrightness: PRESS_ILLUMINATION[input.pressHighlight].brightness * pressP,
+        innerLight: [1, 1, 1, PRESS_ILLUMINATION[input.pressHighlight].light * pressP],
+        innerLightPos: [
+          goo.pointerX ?? lenses[0].x,
+          goo.pointerY ?? lenses[0].y
+        ],
+        innerLightRadius: PRESS_LIGHT_RADIUS_PX
       };
     }
 
@@ -762,6 +857,50 @@ const GlassDropdown = ({
             : `translate(${dx * MENU_GRAB_CONTENT_FACTOR}px, ${dy * MENU_GRAB_CONTENT_FACTOR}px)`;
       }
       drawFrame();
+    }
+  });
+
+  /**
+   * Tracks the pointer in region px for the in-glass press light (the
+   * shader's innerLightPos). Imperative — rides gooRef, no React state.
+   */
+  const updateGooPointer = useCallback((event: { clientX: number; clientY: number }) => {
+    const goo = gooRef.current!;
+    const root = rootRef.current;
+    const layoutNow = drawInputRef.current.layout;
+    if (!root || !layoutNow) return;
+    const rect = root.getBoundingClientRect();
+    goo.pointerX = event.clientX - rect.left - layoutNow.region.left;
+    goo.pointerY = event.clientY - rect.top - layoutNow.region.top;
+  }, []);
+
+  // Grab-the-material on the trigger — same GlassButton elasticity, expressed
+  // in the goo. Unlike the menu, the trigger CAN use the hook's pointer-
+  // capture handlers (it is a single button; capture cannot retarget a click
+  // away from anything), so the gesture wiring is the simple spreadable kind,
+  // composed into the trigger's pointer handlers alongside the press
+  // machinery — exactly how GlassButton layers press + grab. The deflection
+  // is a draw input (deforms L0 in the merged map); the icon gets a lighter
+  // parallax on its own inner span, whose transform this hook never shares
+  // with the press scale (that lives on TriggerIcon — they compose by
+  // nesting, the same two-writer rule as GlassButton's GrabLayer/Lens).
+  const triggerIconParallaxRef = useRef<HTMLSpanElement>(null);
+  const triggerGrab = useGlassGrab(triggerRef, {
+    applyTransform: false,
+    enabled: materialDeformation && gooActive,
+    maxPx: TRIGGER_GRAB_MAX_PX,
+    onDeflection: (dx, dy) => {
+      const goo = gooRef.current!;
+      goo.triggerGrabDx = dx;
+      goo.triggerGrabDy = dy;
+      const parallax = triggerIconParallaxRef.current;
+      if (parallax) {
+        parallax.style.transform =
+          dx === 0 && dy === 0
+            ? ""
+            : `translate(${dx * TRIGGER_GRAB_CONTENT_FACTOR}px, ${dy * TRIGGER_GRAB_CONTENT_FACTOR}px)`;
+      }
+      if (gooActive) drawFrame();
     }
   });
 
@@ -1200,33 +1339,57 @@ const GlassDropdown = ({
         onClick={handleTriggerClick}
         onKeyDown={handleTriggerKeyDown}
         onKeyUp={press.handlers.onKeyUp}
-        onLostPointerCapture={press.handlers.onLostPointerCapture}
-        onPointerCancel={press.handlers.onPointerCancel}
-        onPointerDown={press.handlers.onPointerDown}
+        onLostPointerCapture={(event) => {
+          press.handlers.onLostPointerCapture(event);
+          triggerGrab.handlers.onLostPointerCapture(event);
+        }}
+        onPointerCancel={(event) => {
+          press.handlers.onPointerCancel(event);
+          triggerGrab.handlers.onPointerCancel(event);
+        }}
+        onPointerDown={(event) => {
+          press.handlers.onPointerDown(event);
+          // The grab anchors at the press origin; the trigger never moves, so
+          // engaging it costs nothing until the pointer actually drags.
+          triggerGrab.handlers.onPointerDown(event);
+        }}
         onPointerEnter={(event) => {
           setIsHovered(true);
-          // Pointer vars feed GlassPressEffects' cursor light (CSS vars
-          // inherit into the clip below); keyboard presses fall back to the
-          // centered glow automatically because the vars stay unset.
-          updateGlassPointerLight(event.currentTarget, event);
+          // The in-glass press light tracks the pointer via gooRef — no CSS
+          // vars; the illumination is shader chrome, not a DOM layer.
+          updateGooPointer(event);
         }}
         onPointerLeave={() => setIsHovered(false)}
-        onPointerMove={(event) => updateGlassPointerLight(event.currentTarget, event)}
-        onPointerUp={press.handlers.onPointerUp}
+        onPointerMove={(event) => {
+          updateGooPointer(event);
+          triggerGrab.handlers.onPointerMove(event);
+          // While pressed, the in-glass light must track the pointer even
+          // when no other loop is drawing (e.g. the post-release hold, or a
+          // still press with the grab spring settled). Chrome-only redraw —
+          // the merged map stays cached unless geometry changed.
+          if (gooActive && drawInputRef.current.pressProgress > 0) drawFrame();
+        }}
+        onPointerUp={(event) => {
+          press.handlers.onPointerUp(event);
+          triggerGrab.handlers.onPointerUp(event);
+        }}
         ref={triggerRef}
         type="button"
       >
-        {/* Press bloom + cursor light, clipped to the trigger circle: above
-            the goo canvas (the glass face), below the icon so it stays crisp.
-            Renders nothing at zero progress. */}
-        <TriggerPressClip aria-hidden="true">
-          <GlassPressEffects exposure={PRESS_EXPOSURE} progress={pressProgress} />
-        </TriggerPressClip>
+        {/* No DOM press layer: a DOM overlay stays a rigid circle while the
+            goo squishes/stretches, so BOTH press-highlight modes render in
+            the shader chrome (innerBrightness + pointer-anchored innerLight,
+            see drawFrame) and morph with the glass. */}
         <TriggerIcon
           aria-hidden="true"
           style={{ transform: `scale(${1 - (1 - PRESS_ICON_SCALE) * pressProgress})` }}
         >
-          {icon ?? <DefaultTriggerIcon />}
+          {/* Grab parallax rides its own nested span: the press scale owns
+              TriggerIcon's inline transform, and the spring writes here per
+              frame (no CSS transition — it would lag the spring). */}
+          <TriggerIconInner ref={triggerIconParallaxRef}>
+            {icon ?? <DefaultTriggerIcon />}
+          </TriggerIconInner>
         </TriggerIcon>
       </TriggerButton>
       {/* data-open is constant in JSX so React never rewrites it: the

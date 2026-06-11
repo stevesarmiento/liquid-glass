@@ -19,3 +19,4 @@ export {
   GLASS_SWITCH_SIZE_PRESETS,
 } from "./sizes";
 export type { GlassComponentSize } from "./sizes";
+export type { GlassPressHighlight } from "./press";

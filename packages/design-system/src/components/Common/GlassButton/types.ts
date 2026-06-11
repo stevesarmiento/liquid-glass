@@ -8,6 +8,7 @@ import type {
   LiquidGlassEngineMode
 } from "liquid-glass";
 import type { GlassComponentSize } from "../sizes";
+import type { GlassPressHighlight } from "../press";
 
 export type GlassButtonVariant = "glass" | "tinted" | "ghost";
 
@@ -49,6 +50,12 @@ export interface GlassButtonProps extends ButtonHTMLAttributes<HTMLButtonElement
   renderer?: GlassRendererMode;
   /** Shows a spinner, sets aria-busy, and ignores activation while pending. */
   loading?: boolean;
+  /**
+   * Press highlight style. "natural" (default) lets the glass itself carry
+   * the press cue — boosted lens optics and saturation, no composited
+   * layers. "additive" also mounts the overexposure bloom + cursor light.
+   */
+  pressHighlight?: GlassPressHighlight;
   /** Preset size for the button geometry and lens optics. */
   size?: GlassComponentSize;
   /** Visual style of the button chrome. */

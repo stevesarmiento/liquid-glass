@@ -125,6 +125,7 @@ const GlassButton = ({
   onPointerCancel,
   onPointerDown,
   onPointerUp,
+  pressHighlight = "natural",
   renderer,
   size = "md",
   style,
@@ -447,9 +448,12 @@ const GlassButton = ({
               tint={surfaceTint}
             />
           )}
-          {/* Pointer light + overexposure bloom ride the press tween with the
-              optics/saturation; the layer renders nothing at zero progress. */}
-          <GlassPressEffects exposure={PRESS_EXPOSURE} progress={pressProgress} />
+          {/* Additive press layer (pointer light + overexposure bloom) is
+              opt-in: the default "natural" press cue is the glass itself —
+              boosted optics and saturation riding the same tween. */}
+          {pressHighlight === "additive" && (
+            <GlassPressEffects exposure={PRESS_EXPOSURE} progress={pressProgress} />
+          )}
         </Lens>
       </GrabLayer>
     </ButtonRoot>

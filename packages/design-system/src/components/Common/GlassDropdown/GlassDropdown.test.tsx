@@ -317,11 +317,9 @@ describe("GlassDropdown", () => {
     const trigger = getTrigger(host);
 
     keydown(trigger, "Enter");
-    // Menu semantics keep priority…
+    // Menu semantics keep priority (the press cue itself is shader chrome —
+    // innerBrightness/innerLight in the goo render — with no DOM to observe).
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    // …while the press visuals engage on the same keydown (snapped to full
-    // press under reduced motion, so GlassPressEffects is mounted).
-    expect(host.querySelector(PRESS_EFFECTS_SELECTOR)).not.toBeNull();
 
     await flushFocusTimer();
     expect(document.activeElement).toBe(getItems(host)[0]);
@@ -331,19 +329,27 @@ describe("GlassDropdown", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("pointer presses engage press visuals and still toggle the menu", () => {
+  it("pointer presses still toggle the menu (press cue is shader chrome)", () => {
     stubReducedMotion();
     render();
     const trigger = getTrigger(host);
 
     pointer(trigger, "pointerdown");
-    expect(host.querySelector(PRESS_EFFECTS_SELECTOR)).not.toBeNull();
-
     pointer(trigger, "pointerup");
     act(() => trigger.click());
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    // The post-release hold keeps the press cue excited after the click.
-    expect(host.querySelector(PRESS_EFFECTS_SELECTOR)).not.toBeNull();
+  });
+
+  it("never mounts a DOM press layer — both highlight modes live in the goo", () => {
+    stubReducedMotion();
+    // Even "additive" is an in-glass illumination grade, not a DOM overlay
+    // (a DOM layer cannot morph with the deformed blob).
+    render({ pressHighlight: "additive" });
+    const trigger = getTrigger(host);
+
+    pointer(trigger, "pointerdown");
+    expect(host.querySelector(PRESS_EFFECTS_SELECTOR)).toBeNull();
+    pointer(trigger, "pointerup");
   });
 
   it("toggles hover state with pointer enter/leave", () => {

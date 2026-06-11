@@ -92,6 +92,22 @@ export interface WebglGlassChrome {
   glowRotation?: number;
   /** Backdrop saturation applied inside the blob; 1 (default) is a no-op. */
   saturation?: number;
+  /**
+   * Uniform brightness lift inside the blob, 0..1 toward white — press
+   * illumination ("the light turns on"). Evaluated inside the blob mask, so
+   * it morphs with the deformed glass. Default 0 (no-op).
+   */
+  innerBrightness?: number;
+  /**
+   * Pointer-anchored interior light (straight RGBA, alpha = strength).
+   * Radial falloff around `innerLightPos`, clipped by the blob — the glass
+   * knows where the light source is. Alpha 0 (default) disables it.
+   */
+  innerLight?: [number, number, number, number];
+  /** Interior light center in region CSS px. Default [0, 0]. */
+  innerLightPos?: [number, number];
+  /** Interior light falloff radius in CSS px. Default 110. */
+  innerLightRadius?: number;
   /** Drop shadow color; alpha 0 (default) disables the shadow. */
   shadowColor?: [number, number, number, number];
   /**
@@ -242,6 +258,10 @@ interface GlassUniforms {
   glowRadii: WebGLUniformLocation | null;
   glowRotation: WebGLUniformLocation | null;
   saturation: WebGLUniformLocation | null;
+  innerBrightness: WebGLUniformLocation | null;
+  innerLight: WebGLUniformLocation | null;
+  innerLightPos: WebGLUniformLocation | null;
+  innerLightRadius: WebGLUniformLocation | null;
   shadowColor: WebGLUniformLocation | null;
   shadowOffset: WebGLUniformLocation | null;
   shadowBlur: WebGLUniformLocation | null;
@@ -501,6 +521,10 @@ function createResources(gl: WebGL2RenderingContext): GlResources {
       glowRadii: gl.getUniformLocation(glassProgram, "u_glowRadii"),
       glowRotation: gl.getUniformLocation(glassProgram, "u_glowRotation"),
       saturation: gl.getUniformLocation(glassProgram, "u_saturation"),
+      innerBrightness: gl.getUniformLocation(glassProgram, "u_innerBrightness"),
+      innerLight: gl.getUniformLocation(glassProgram, "u_innerLight"),
+      innerLightPos: gl.getUniformLocation(glassProgram, "u_innerLightPos"),
+      innerLightRadius: gl.getUniformLocation(glassProgram, "u_innerLightRadius"),
       shadowColor: gl.getUniformLocation(glassProgram, "u_shadowColor"),
       shadowOffset: gl.getUniformLocation(glassProgram, "u_shadowOffset"),
       shadowBlur: gl.getUniformLocation(glassProgram, "u_shadowBlur"),
@@ -808,6 +832,12 @@ function drawGlassPass(
   gl.uniform2f(r.glassUniforms.glowRadii, glowRadii[0], glowRadii[1]);
   gl.uniform1f(r.glassUniforms.glowRotation, chrome?.glowRotation ?? 0);
   gl.uniform1f(r.glassUniforms.saturation, chrome?.saturation ?? 1);
+  gl.uniform1f(r.glassUniforms.innerBrightness, chrome?.innerBrightness ?? 0);
+  const innerLight = chrome?.innerLight ?? [0, 0, 0, 0];
+  gl.uniform4f(r.glassUniforms.innerLight, innerLight[0], innerLight[1], innerLight[2], innerLight[3]);
+  const innerLightPos = chrome?.innerLightPos ?? [0, 0];
+  gl.uniform2f(r.glassUniforms.innerLightPos, innerLightPos[0], innerLightPos[1]);
+  gl.uniform1f(r.glassUniforms.innerLightRadius, chrome?.innerLightRadius ?? 110);
   const shadowColor = chrome?.shadowColor ?? [0, 0, 0, 0];
   gl.uniform4f(r.glassUniforms.shadowColor, shadowColor[0], shadowColor[1], shadowColor[2], shadowColor[3]);
   const shadowOffset = chrome?.shadowOffset ?? [0, 0];

@@ -680,7 +680,10 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     const chrome: WebglGlassChrome = {
       tint: parseCssColor(tint.background) ?? [0, 0, 0, 0],
       border: parseCssColor(tint.border) ?? [0, 0, 0, 0],
-      borderWidth: 1.5,
+      // Match the CSS chrome's `border: 1px solid` (single-lens mode). The
+      // shader AA softens both edges of the band, so anything wider reads
+      // visibly fatter than the CSS border it replaces.
+      borderWidth: 1,
       highlight: highlight ? [highlight[0], highlight[1], highlight[2]] : [1, 1, 1],
       highlightStrength: Math.max(highlight ? highlight[3] : 0, MIN_RIM_STRENGTH),
       lightDir: rotateDir(

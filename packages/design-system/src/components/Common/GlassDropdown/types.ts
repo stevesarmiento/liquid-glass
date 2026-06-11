@@ -6,6 +6,7 @@ import type {
   LensParams,
   LiquidGlassEngineMode
 } from "liquid-glass";
+import type { GlassPressHighlight } from "../press";
 
 export interface GlassDropdownItem {
   id: string;
@@ -66,6 +67,14 @@ export interface GlassDropdownProps {
   glassLens?: Partial<LensParams>;
   /** Engine mode forwarded to liquid-glass. */
   engineMode?: LiquidGlassEngineMode;
+  /**
+   * Press highlight grade on the trigger. Both modes render IN the glass
+   * (shader chrome: a brightness lift + a pointer-anchored interior light,
+   * clipped by the blob so they morph with the deformed goo — never a DOM
+   * overlay). "natural" (default) is the material's subtle response;
+   * "additive" is the hotter, bloom-like grade.
+   */
+  pressHighlight?: GlassPressHighlight;
   /**
    * Enables the grab-the-material behavior on the open menu: press-and-drag
    * elastically deforms the menu lens (it stretches toward the pull, the goo
