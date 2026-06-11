@@ -8,7 +8,7 @@ import type {
 import { GlassNode, type GlassNodeProps } from "liquid-glass/react";
 import { IconLocationFill, IconSunMaxFill } from "symbols-react";
 
-import { INITIAL_ISLAND_SIZE, type IslandDemo, type IslandSize } from "../playgroundConfig";
+import { INITIAL_ISLAND_SIZE, LOCATION_MAP_URL, type IslandDemo, type IslandSize } from "../playgroundConfig";
 import { computeCoverSlice } from "../playgroundUtils";
 
 interface DynamicIslandDemoProps {
@@ -123,7 +123,7 @@ export const DynamicIslandDemo = memo(function DynamicIslandDemo({
     <button
       aria-expanded={islandExpanded}
       aria-label={islandExpanded ? "Collapse Dynamic Island" : "Expand Dynamic Island"}
-      className={`dynamicIsland${islandExpanded ? " islandExpanded" : ""}${islandDemo === "weather" ? " demoWeather" : ""}`}
+      className={`dynamicIsland${islandExpanded ? " islandExpanded" : ""}${islandDemo === "weather" ? " demoWeather" : ""}${islandDemo === "location" ? " demoLocation" : ""}`}
       onClick={onCycle}
       onPointerDown={(event) => event.stopPropagation()}
       onPointerMove={(event) => event.stopPropagation()}
@@ -152,7 +152,9 @@ export const DynamicIslandDemo = memo(function DynamicIslandDemo({
         tint={glassTint}
       />
       <span className="islandContent" aria-hidden={!islandExpanded}>
-        {islandDemo === "messages" ? <MessagesIslandContent /> : <WeatherIslandContent />}
+        {islandDemo === "messages" && <MessagesIslandContent />}
+        {islandDemo === "weather" && <WeatherIslandContent />}
+        {islandDemo === "location" && <LocationIslandContent />}
       </span>
     </button>
   );
@@ -199,6 +201,17 @@ function WeatherIslandContent() {
             <small>H:63&deg; L:52&deg;</small>
           </span>
         </span>
+      </span>
+    </>
+  );
+}
+
+function LocationIslandContent() {
+  return (
+    <>
+      <span className="islandHeadline">Alex is about 2 miles away.</span>
+      <span className="islandLocationCard">
+        <span className="islandLocationMap" style={{ backgroundImage: `url(${LOCATION_MAP_URL})` }} />
       </span>
     </>
   );

@@ -8,7 +8,7 @@ import {
   type LiquidGlassRenderer,
   type ResolvedLensParams,
 } from "liquid-glass";
-import { IconMessageFill, IconSunMaxFill } from "symbols-react";
+import { IconLocationFill, IconMessageFill, IconSunMaxFill } from "symbols-react";
 
 export const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
   ["width", "height", "radius", "mapSize"],
@@ -37,11 +37,12 @@ export const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number
 };
 
 export const PAINTING_URL = "/images/rinaldo-armida.jpg";
+export const LOCATION_MAP_URL = "/images/map.png";
 
 export type WallpaperId = "painting" | "ferry" | "macaw";
 export type TintMode = "preset" | "custom";
 export type StageMode = "painting" | "iphone";
-export type IslandDemo = "messages" | "weather";
+export type IslandDemo = "messages" | "weather" | "location";
 export type FloatingControlsPosition = { x: number; y: number };
 export type IslandSize = { width: number; height: number };
 export type FloatingControlsDrag = {
@@ -157,6 +158,7 @@ export const STAGE_SCENES: Array<{ id: StageMode; label: string; hint: string }>
 export const ISLAND_DEMOS: Array<{ id: IslandDemo; label: string; Icon: typeof IconMessageFill }> = [
   { id: "messages", label: "Messages notification", Icon: IconMessageFill },
   { id: "weather", label: "Weather forecast", Icon: IconSunMaxFill },
+  { id: "location", label: "Find My location", Icon: IconLocationFill },
 ];
 
 export const DROPDOWN_PREVIEW_ITEMS: GlassDropdownItem[] = [
