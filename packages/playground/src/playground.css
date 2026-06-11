@@ -1,0 +1,1048 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-width: 320px;
+  height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #f5efe5;
+  background: #15120e;
+  overflow: hidden;
+}
+button, input { font: inherit; }
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+}
+.stage {
+  position: relative;
+  overflow: hidden;
+  height: 100vh;
+  min-height: 0;
+  cursor: crosshair;
+  background: #15120e;
+  touch-action: none;
+}
+.stage.stageIphone {
+  display: grid;
+  place-items: center;
+  cursor: default;
+  background: #0a0a0c;
+}
+.stage.stageIphone::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background-image: radial-gradient(circle, rgba(255,255,255,0.13) 1px, transparent 1.6px);
+  background-size: 24px 24px;
+  background-position: 12px 12px;
+  mask-image: radial-gradient(ellipse 85% 85% at 50% 50%, #000 30%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 85% at 50% 50%, #000 30%, transparent 100%);
+}
+.stage.stageIphone::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background: radial-gradient(ellipse 46% 54% at 50% 46%, rgba(120, 140, 180, 0.1), transparent 70%);
+}
+.lensSurfaceFull {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+.iphoneFrame {
+  position: relative;
+  z-index: 2;
+  height: min(86vh, 800px);
+  aspect-ratio: 392 / 800;
+  padding: 4px;
+  border-radius: 64px;
+  background: linear-gradient(150deg, #5c5c62 0%, #2e2e33 30%, #202024 55%, #4c4c52 100%);
+  box-shadow:
+    0 50px 110px rgba(0, 0, 0, 0.6),
+    0 16px 40px rgba(0, 0, 0, 0.45),
+    inset 0 0 1.5px 1px rgba(255, 255, 255, 0.22);
+}
+.iphoneBezel {
+  height: 100%;
+  padding: 8px;
+  border-radius: 60px;
+  background: #050505;
+}
+.iphoneScreen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 52px;
+  background: #000;
+  cursor: crosshair;
+  touch-action: none;
+  isolation: isolate;
+}
+.iphoneButton {
+  position: absolute;
+  width: 3.5px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #4c4c52, #28282d 50%, #44444a);
+  box-shadow: inset 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.iphoneButton.actionButton { left: -3px; top: 16%; height: 30px; }
+.iphoneButton.volumeUp { left: -3px; top: 23.5%; height: 56px; }
+.iphoneButton.volumeDown { left: -3px; top: 32.5%; height: 56px; }
+.iphoneButton.powerButton { right: -3px; top: 25.5%; height: 90px; }
+.iphoneButton.cameraControl { right: -3px; top: 60%; height: 44px; }
+.dynamicIsland {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  z-index: 10;
+  width: 122px;
+  height: 36px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  transform: translateX(-50%);
+  border-radius: 22px;
+  background: #000;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  /* Base values exist so the expand morph can interpolate them. */
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.85),
+    inset 0 0 3px rgba(255, 255, 255, 0.05);
+  transition:
+    width 460ms cubic-bezier(0.34, 1.25, 0.4, 1),
+    height 460ms cubic-bezier(0.34, 1.25, 0.4, 1),
+    border-radius 460ms cubic-bezier(0.34, 1.25, 0.4, 1),
+    background-color 360ms ease,
+    box-shadow 360ms ease;
+}
+.dynamicIsland.islandExpanded {
+  width: calc(100% - 22px);
+  height: 180px;
+  border-radius: var(--dynamic-island-radius, 34px);
+  background: transparent;
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.dynamicIslandGlass {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.islandExpanded .dynamicIslandGlass {
+  opacity: 1;
+  transition-delay: 70ms;
+}
+.dynamicIslandGlass .lg-glass-node__canvas {
+  border-radius: inherit;
+}
+.dynamicIslandGlassSurface.lg-glass-surface {
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 var(--lg-glass-highlight),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+.islandContent {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  align-content: end;
+  gap: 13px;
+  width: 100%;
+  padding: 19px 18px 15px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition:
+    opacity 140ms ease,
+    transform 160ms ease;
+}
+.islandExpanded .islandContent {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 240ms ease 140ms,
+    transform 300ms cubic-bezier(0.23, 1, 0.32, 1) 140ms;
+}
+.islandHeadline {
+  color: #fff;
+  font-size: 16.5px;
+  letter-spacing: 0.1px;
+  line-height: 1.32;
+  padding-left:10px;
+  margin-top:0px;
+}
+.islandMessage {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px 12px 12px;
+  border-radius: 34px;
+  background: rgba(255, 255, 255, 0.15);
+}
+.islandAvatar {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #a4abbd 0%, #79829a 100%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 620;
+  letter-spacing: 0.4px;
+}
+.islandAvatar::after {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 17px;
+  height: 17px;
+  content: "";
+  border-radius: 30%;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22.5098 20.3613'%3E%3Crect height='20.3613' opacity='0' width='22.5098' x='0' y='0'/%3E%3Cpath d='M3.86719 20.3613C5.03906 20.3613 7.95898 19.082 9.61914 17.8906C9.78516 17.7734 9.92188 17.7246 10.0586 17.7246C10.1855 17.7344 10.3125 17.7441 10.4395 17.7441C17.4805 17.7441 22.1484 13.7402 22.1484 8.87695C22.1484 3.96484 17.2266 0 11.0742 0C4.92188 0 0 3.96484 0 8.87695C0 12.002 1.92383 14.7461 5.05859 16.4258C5.20508 16.5039 5.25391 16.6504 5.17578 16.7969C4.62891 17.6953 3.65234 18.7695 3.28125 19.2578C2.90039 19.7461 3.11523 20.3613 3.86719 20.3613Z' fill='white' fill-opacity='0.85'/%3E%3C/svg%3E") center / 12px 11px no-repeat,
+    linear-gradient(180deg, #5ddb6f, #2eb84e);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.islandMessageBody {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: #fff;
+}
+.islandMessageHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.islandMessageHead b {
+  font-size: 14.5px;
+  font-weight: 680;
+}
+.islandMessageHead small {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  font-weight: 500;
+}
+.islandMessageText {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13.5px;
+  line-height: 1.36;
+}
+/* Weather demo: 3-line headline + the forecast card need a taller panel. */
+.dynamicIsland.islandExpanded.demoWeather {
+  height: 200px;
+}
+.islandWeather {
+  display: grid;
+  gap: 5px;
+  padding: 13px 16px 12px;
+  border-radius: 30px;
+  background: linear-gradient(180deg, #4aa3f5 0%, #2fc7ff 100%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 8px 22px rgba(38, 188, 245, 0.18);
+}
+.islandWeatherTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.islandWeatherCity {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 15.5px;
+  font-weight: 650;
+}
+.islandWeatherCity svg {
+  width: 13px;
+  height: auto;
+  fill: #fff;
+}
+.islandWeatherSun {
+  width: 21px;
+  height: auto;
+  fill: #ffd60a;
+  filter: drop-shadow(0 0 6px rgba(255, 214, 10, 0.55));
+}
+.islandWeatherBottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.islandWeatherTemp {
+  font-size: 46px;
+  font-weight: 380;
+  letter-spacing: -0.5px;
+  line-height: 0.98;
+}
+.islandWeatherMeta {
+  display: grid;
+  gap: 1px;
+  text-align: right;
+}
+.islandWeatherMeta b {
+  font-size: 14.5px;
+  font-weight: 620;
+}
+.islandWeatherMeta small {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.96);
+}
+.islandDemoPicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 18px;
+  background: #1a1a1a;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: panelIn 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.islandDemoChip {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.islandDemoChip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.islandDemoChip:active { transform: scale(0.9); }
+.islandDemoChip.active {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.islandDemoChip svg {
+  width: 13px;
+  height: auto;
+  fill: currentColor;
+}
+.homeIndicator {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  z-index: 9;
+  width: 118px;
+  height: 5px;
+  pointer-events: none;
+  transform: translateX(-50%);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.28);
+}
+.sceneSwitcher {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wallpaperSwatches {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 18px;
+  background: #1a1a1a;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: panelIn 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.wallpaperSwatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background-position: center;
+  background-size: cover;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  transition:
+    outline-color 140ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.wallpaperSwatch:hover { transform: scale(1.08); }
+.wallpaperSwatch:active { transform: scale(0.9); }
+.wallpaperSwatch.active {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.sceneTrigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 10px 0 14px;
+  border: 0;
+  border-radius: 18px;
+  background: #1a1a1a;
+  color: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition:
+    background-color 150ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.sceneTrigger:hover { background: #232323; }
+.sceneTrigger:active { transform: scale(0.97); }
+.sceneTrigger svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.6;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.sceneTrigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.sceneMenuBackdrop {
+  position: fixed;
+  inset: 0;
+}
+.sceneMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  display: grid;
+  gap: 4px;
+  width: 192px;
+  padding: 6px;
+  border-radius: 14px;
+  background: #1c1c1c;
+  box-shadow:
+    0 1px 8px rgba(0, 0, 0, 0.25),
+    0 18px 48px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  animation: panelIn 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.sceneMenu button {
+  display: grid;
+  gap: 2px;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 580;
+  text-align: left;
+  transition: background-color 130ms ease;
+}
+.sceneMenu button small {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-weight: 480;
+}
+.sceneMenu button:hover { background: rgba(255, 255, 255, 0.07); }
+.sceneMenu button.active { background: rgba(255, 255, 255, 0.11); }
+.paintingLayer {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+.paintingSource {
+  z-index: 1;
+}
+.glassTarget {
+  z-index: 3;
+  transform: translateZ(0);
+  will-change: filter, clip-path;
+}
+.glassTargetHidden {
+  opacity: 0;
+  visibility: hidden;
+}
+.glassChrome {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse var(--glass-highlight-width) var(--glass-highlight-height) at var(--glass-highlight-x) var(--glass-highlight-y), var(--glass-tint-highlight) 0%, var(--glass-tint-highlight) var(--glass-highlight-core), transparent var(--glass-highlight-spread)),
+    var(--glass-tint-bg);
+  border: 1px solid var(--glass-tint-border);
+  box-shadow:
+    0 18px 48px var(--glass-tint-shadow),
+    inset 0 1px var(--glass-tint-highlight),
+    inset 0 -1px rgba(0, 0, 0, 0.16);
+}
+.glassChrome::before {
+  position: absolute;
+  left: calc(var(--glass-highlight-x) - var(--glass-highlight-width) * 0.34);
+  top: calc(var(--glass-highlight-y) - var(--glass-highlight-height) * 0.39);
+  width: calc(var(--glass-highlight-width) * 0.68);
+  height: calc(var(--glass-highlight-height) * 0.78);
+  border-radius: 999px;
+  pointer-events: none;
+  content: "";
+  background: var(--glass-tint-highlight);
+  filter: blur(10px);
+  opacity: 0.62;
+  transform: rotate(var(--glass-highlight-rotation));
+  mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--glass-highlight-core), transparent var(--glass-highlight-spread));
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--glass-highlight-core), transparent var(--glass-highlight-spread));
+}
+.glassChrome::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  content: "";
+  box-shadow:
+    inset 1px 0 rgba(255,255,255,0.22),
+    inset -1px 0 rgba(0,0,0,0.08);
+}
+.componentDock {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: max-content;
+  max-width: calc(100% - 48px);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+.componentPreview {
+  display: grid;
+  place-items: center;
+  gap: 18px;
+  min-height: 132px;
+  padding: 32px;
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 24px;
+  box-shadow:
+    0 24px 70px rgba(0,0,0,0.24),
+    0 2px 8px rgba(0,0,0,0.08);
+}
+.sliderPreview {
+  width: min(380px, calc(100vw - 48px));
+  min-width: 0;
+}
+.switchPreview {
+  width: 210px;
+  justify-items: stretch;
+  min-height: 132px;
+  padding: 20px 18px;
+  gap: 12px;
+}
+.switchPreviewRow {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.switchPreviewRow span {
+  color: rgba(17,17,17,0.5);
+  font-size: 11px;
+  font-weight: 680;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.buttonPreview {
+  /* No container chrome — just the buttons, stacked by size, floating over
+     the painting. */
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+}
+.dropdownPreview {
+  /* No container chrome — the trigger (and its goo menu, which overlays
+     absolutely) floats directly over the painting. */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.modalPreview {
+  width: 96px;
+  min-height: 132px;
+  padding: 18px;
+}
+.modalPreviewButton,
+.modalConfirmButton {
+  min-height: 38px;
+  padding: 0 16px;
+  color: #ffffff;
+  background: #1a88f8;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(26, 136, 248, 0.24);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 720;
+}
+.modalPreviewButton:active,
+.modalConfirmButton:active {
+  transform: scale(0.97);
+}
+.modalPreviewBody {
+  display: grid;
+  gap: 12px;
+  max-width: 320px;
+}
+.modalPreviewBody p {
+  margin: 0;
+}
+.attribution {
+  position: absolute;
+  left: 18px;
+  bottom: 14px;
+  z-index: 5;
+  pointer-events: none;
+  color: rgba(255, 248, 237, 0.76);
+  font-size: 12px;
+  text-shadow: 0 1px 10px rgba(0,0,0,0.45);
+}
+.floatingControls {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 20;
+  width: min(326px, calc(100vw - 32px));
+  color: #fff;
+  font-family: inherit;
+  pointer-events: auto;
+  will-change: transform;
+}
+.controlBar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  height: 44px;
+  margin-left: auto;
+  padding: 6px;
+  border-radius: 22px;
+  background: #1a1a1a;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255,255,255,0.06);
+  user-select: none;
+  transition:
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.controlBar.dragging {
+  transform: scale(0.98);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.26),
+    inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+.dragHandle,
+.iconButton {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.dragHandle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  width: 32px;
+  flex: 0 0 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 16px;
+  cursor: grab;
+  transition: background-color 150ms ease;
+}
+.dragHandle:hover {
+  background: rgba(255,255,255,0.08);
+}
+.dragHandle:active {
+  cursor: grabbing;
+}
+.gripDots {
+  width: 12px;
+  height: 18px;
+  flex: 0 0 auto;
+  opacity: 0.45;
+  background-image: radial-gradient(circle, currentColor 1.2px, transparent 1.4px);
+  background-size: 6px 6px;
+  background-position: 0 1px;
+}
+.iconButton {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: rgba(255,255,255,0.84);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.iconButton:hover {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+.iconButton:active {
+  transform: scale(0.92);
+}
+.iconButton svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+.controlsPanel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 100%;
+  max-height: min(72vh, 628px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border-radius: 16px;
+  background: #1c1c1c;
+  box-shadow:
+    0 1px 8px rgba(0, 0, 0, 0.25),
+    0 18px 48px rgba(0, 0, 0, 0.22),
+    inset 0 0 0 1px rgba(255,255,255,0.07);
+  animation: panelIn 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  cursor: default;
+}
+.panelAbove .controlsPanel {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+.panelAbove .controlsPanel {
+  transform-origin: bottom right;
+}
+.accordionStack {
+  display: grid;
+  gap: 8px;
+}
+.accordionSection {
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.035);
+}
+.accordionSection[open] {
+  background: rgba(255,255,255,0.055);
+}
+.accordionSection summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 12px;
+  color: rgba(255,255,255,0.88);
+  font-size: 13px;
+  font-weight: 560;
+  cursor: pointer;
+  list-style: none;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+.accordionSection summary::-webkit-details-marker {
+  display: none;
+}
+.accordionSection summary:hover {
+  background: rgba(255,255,255,0.045);
+  color: #fff;
+}
+.accordionSection summary::after {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: "";
+  opacity: 0.42;
+  transform: rotate(45deg) translateY(-2px);
+  transition:
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 150ms ease;
+}
+.accordionSection[open] summary::after {
+  opacity: 0.72;
+  transform: rotate(225deg) translateY(-1px);
+}
+.accordionSection summary b {
+  margin-left: auto;
+  max-width: 112px;
+  overflow: hidden;
+  color: rgba(255,255,255,0.46);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accordionBody {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+.stats div, .controlsPanel label span, .labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.segments {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+}
+.segments button {
+  height: 30px;
+  border: 0;
+  border-right: 1px solid rgba(255,255,255,0.07);
+  background: transparent;
+  color: rgba(255,255,255,0.68);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 560;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.segments button:last-child { border-right: 0; }
+.segments button:hover { color: #fff; }
+.segments button:active { transform: scale(0.96); }
+.segments button.active { background: #fff; color: #15191b; }
+.segments.tintMode { grid-template-columns: repeat(2, 1fr); }
+.visibilityGrid {
+  display: grid;
+  gap: 6px;
+}
+.group {
+  display: grid;
+  gap: 10px;
+}
+.controlsPanel label {
+  display: grid;
+  gap: 6px;
+  color: rgba(255,255,255,0.54);
+  font-size: 12px;
+}
+.controlsPanel label.visibilityToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.045);
+  color: rgba(255,255,255,0.78);
+  cursor: pointer;
+}
+.visibilityToggle input {
+  width: 36px;
+  height: 20px;
+  margin: 0;
+  accent-color: #6fd7d0;
+  cursor: pointer;
+}
+.controlsPanel label b, .labelRow b {
+  color: rgba(255,255,255,0.86);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.labelRow {
+  color: rgba(255,255,255,0.52);
+  font-size: 12px;
+}
+.controlsPanel input[type="range"] {
+  width: 100%;
+  height: 16px;
+  accent-color: #6fd7d0;
+}
+.customTint {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.045);
+}
+.colorControl {
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+}
+.colorControl input {
+  width: 44px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+.tintGrid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 7px;
+}
+.tintSwatch {
+  aspect-ratio: 1;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, var(--swatch-border), transparent 45%),
+    var(--swatch-bg);
+  cursor: pointer;
+  box-shadow: inset 0 1px rgba(255,255,255,0.55);
+  transition:
+    outline-color 140ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.tintSwatch:active {
+  transform: scale(0.9);
+}
+.tintSwatch.active {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.stats div {
+  display: grid;
+  min-height: 42px;
+  align-content: center;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.045);
+}
+.stats dt {
+  color: rgba(255,255,255,0.42);
+  font-size: 11px;
+}
+.stats dd {
+  margin: 0;
+  color: rgba(255,255,255,0.88);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 880px) {
+  body { height: 100vh; overflow: hidden; }
+  .shell { grid-template-columns: 1fr; height: 100vh; overflow: hidden; }
+  .stage { height: 100vh; min-height: 100vh; }
+  .componentDock {
+    top: 50%;
+    width: min(340px, calc(100% - 32px));
+    max-width: calc(100% - 32px);
+  }
+  .sliderPreview,
+  .switchPreview,
+  .buttonPreview,
+  .dropdownPreview,
+  .modalPreview {
+    width: 100%;
+  }
+  .componentPreview { padding: 22px; }
+  .switchPreview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-height: 0;
+    padding: 16px;
+  }
+  .switchPreviewRow {
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .attribution { display: none; }
+  .iphoneFrame { height: min(76vh, 700px); border-radius: 54px; }
+  .iphoneBezel { padding: 6px; border-radius: 50px; }
+  .iphoneScreen { border-radius: 44px; }
+}
