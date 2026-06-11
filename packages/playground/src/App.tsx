@@ -8,6 +8,7 @@ import {
   createLiquidGlassController,
   createLiquidGlassEngine,
   resolveGlassTint,
+  type GlassCanvasSource,
   type GlassTintInput,
   type GlassTintName,
   type LensParams,
@@ -18,6 +19,8 @@ import {
   type LiquidGlassRenderMode,
   type ResolvedLensParams,
 } from "liquid-glass";
+import { GlassNode } from "liquid-glass/react";
+import { IconLocationFill, IconMessageFill, IconSunMaxFill } from "symbols-react";
 
 const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
   ["width", "height", "radius", "mapSize"],
@@ -97,7 +100,9 @@ const INITIAL_CUSTOM_TINT: Required<Pick<GlassTintInput, "color" | "opacity" | "
 
 type TintMode = "preset" | "custom";
 type StageMode = "painting" | "iphone";
+type IslandDemo = "messages" | "weather";
 type FloatingControlsPosition = { x: number; y: number };
+type IslandSize = { width: number; height: number };
 type FloatingControlsDrag = {
   pointerId: number;
   startX: number;
@@ -111,6 +116,7 @@ type ComponentVisibility = Record<VisibilityKey, boolean>;
 const FLOATING_CONTROLS_WIDTH = 326;
 const FLOATING_CONTROLS_MARGIN = 16;
 const FLOATING_CONTROLS_BAR_HEIGHT = 44;
+const INITIAL_ISLAND_SIZE: IslandSize = { width: 122, height: 36 };
 const SWITCH_PREVIEW_SIZES: GlassComponentSize[] = ["sm", "md", "lg", "xl"];
 type SwitchPreviewStackProps = Pick<
   ComponentProps<typeof GlassSwitch>,
@@ -145,6 +151,15 @@ const STAGE_SCENES: Array<{ id: StageMode; label: string; hint: string }> = [
   { id: "painting", label: "Painting", hint: "Full-bleed canvas" },
   { id: "iphone", label: "iPhone 17", hint: "Device frame" },
 ];
+/**
+ * Dynamic Island demos, in cycle order. Clicking the island walks this list:
+ * collapsed → demo 0 → demo 1 → … → collapsed. The top-right picker jumps
+ * straight to any entry. Add demos here and both controls pick them up.
+ */
+const ISLAND_DEMOS: Array<{ id: IslandDemo; label: string; Icon: typeof IconMessageFill }> = [
+  { id: "messages", label: "Messages notification", Icon: IconMessageFill },
+  { id: "weather", label: "Weather forecast", Icon: IconSunMaxFill },
+];
 const DROPDOWN_PREVIEW_ITEMS: GlassDropdownItem[] = [
   { id: "view", label: "View painting" },
   { id: "favorite", label: "Add to favorites" },
@@ -166,6 +181,7 @@ export default function App() {
   const statsFlushRef = useRef<number | null>(null);
   const controllerRef = useRef<LiquidGlassController | null>(null);
   const floatingControlsRef = useRef<HTMLDivElement | null>(null);
+  const dynamicIslandRef = useRef<HTMLButtonElement | null>(null);
   const controlsPositionRef = useRef<FloatingControlsPosition>(getInitialControlsPosition());
   const pendingControlsPositionRef = useRef<FloatingControlsPosition>(controlsPositionRef.current);
   const controlsDragRef = useRef<FloatingControlsDrag | null>(null);
@@ -192,6 +208,12 @@ export default function App() {
   const [stageMode, setStageMode] = useState<StageMode>("painting");
   const [sceneMenuOpen, setSceneMenuOpen] = useState(false);
   const [pressHighlight, setPressHighlight] = useState<GlassPressHighlight>("natural");
+  const [islandExpanded, setIslandExpanded] = useState(false);
+  const [islandDemo, setIslandDemo] = useState<IslandDemo>("messages");
+  // True after an island-click close: the NEXT open advances the demo cycle.
+  const islandCycleArmedRef = useRef(false);
+  const [islandSize, setIslandSize] = useState<IslandSize>(INITIAL_ISLAND_SIZE);
+  const [islandBackdropVersion, setIslandBackdropVersion] = useState(0);
   const [wallpaperId, setWallpaperId] = useState<WallpaperId>("painting");
   // Wallpaper toggles only apply to the iPhone scene; the full-bleed
   // painting stage always shows the painting.
@@ -245,6 +267,49 @@ export default function App() {
       mapSize: Math.min(lens.mapSize, 384),
     }),
     [lens],
+  );
+  const islandLens = useMemo<Partial<LensParams>>(
+    () => ({
+      width: Math.max(1, islandSize.width),
+      height: Math.max(1, islandSize.height),
+      radius: lens.radius,
+      scaleX: lens.scaleX,
+      scaleY: lens.scaleY,
+      chroma: lens.chroma,
+      depth: lens.depth,
+      dome: lens.dome,
+      splay: lens.splay,
+      glow: lens.glow,
+      edge: lens.edge,
+      glowSpread: lens.glowSpread,
+      glowExponent: lens.glowExponent,
+      edgeExponent: lens.edgeExponent,
+      specularRotation: lens.specularRotation,
+      blur: lens.blur,
+      mapSize: lens.mapSize,
+    }),
+    [islandSize.height, islandSize.width, lens],
+  );
+  const islandDrawSource = useMemo<GlassCanvasSource>(
+    () =>
+      ({ ctx, metrics }) => {
+        ctx.fillStyle = "#101014";
+        ctx.fillRect(0, 0, metrics.sourceWidth, metrics.sourceHeight);
+
+        const island = dynamicIslandRef.current;
+        const screen = containerRef.current;
+        const image = getIslandBackdropImage(backgroundUrl);
+        if (!island || !screen || !isImageReady(image)) return;
+
+        const slice = computeCoverSlice({
+          imageWidth: image.naturalWidth,
+          imageHeight: image.naturalHeight,
+          anchor: screen.getBoundingClientRect(),
+          target: island.getBoundingClientRect(),
+        });
+        ctx.drawImage(image, slice.x, slice.y, slice.width, slice.height);
+      },
+    [backgroundUrl, islandBackdropVersion],
   );
   const buttonLens = useMemo<Partial<LensParams>>(
     () => ({
@@ -346,6 +411,42 @@ export default function App() {
       sourceImageUrl: backgroundUrl,
     });
   }, [lens, position, positions, blend, dualLens, renderMode, glassTint, backgroundUrl]);
+
+  useEffect(() => {
+    const island = dynamicIslandRef.current;
+    if (!island) return;
+
+    const updateSize = () => {
+      const rect = island.getBoundingClientRect();
+      setIslandSize((current) => {
+        const next = {
+          width: Math.max(1, Math.round(rect.width)),
+          height: Math.max(1, Math.round(rect.height)),
+        };
+        return current.width === next.width && current.height === next.height ? current : next;
+      });
+    };
+
+    updateSize();
+
+    const resizeObserver = new ResizeObserver(updateSize);
+    resizeObserver.observe(island);
+    return () => resizeObserver.disconnect();
+  }, [stageMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const image = getIslandBackdropImage(backgroundUrl);
+    if (isImageReady(image)) {
+      setIslandBackdropVersion((version) => version + 1);
+      return undefined;
+    }
+
+    const handleLoad = () => setIslandBackdropVersion((version) => version + 1);
+    image.addEventListener("load", handleLoad);
+    return () => image.removeEventListener("load", handleLoad);
+  }, [backgroundUrl]);
 
   // The lens position is driven imperatively during drags (no React render
   // per pointermove — Safari can't keep up with a full re-render per frame).
@@ -449,6 +550,26 @@ export default function App() {
       ...current,
       [key]: value,
     }));
+  }
+
+  /**
+   * Main island action: every click is a plain open/close toggle — content
+   * NEVER swaps while the panel is visible. Closing arms the cycle, and the
+   * next open advances to the next ISLAND_DEMOS entry (the swap happens
+   * while collapsed, so it is invisible). New demos join the cycle for free.
+   */
+  function cycleIsland() {
+    if (islandExpanded) {
+      setIslandExpanded(false);
+      islandCycleArmedRef.current = true;
+      return;
+    }
+    if (islandCycleArmedRef.current) {
+      islandCycleArmedRef.current = false;
+      const index = ISLAND_DEMOS.findIndex((demo) => demo.id === islandDemo);
+      setIslandDemo(ISLAND_DEMOS[(index + 1) % ISLAND_DEMOS.length].id);
+    }
+    setIslandExpanded(true);
   }
 
   function updateVisibility(key: VisibilityKey, value: boolean) {
@@ -710,7 +831,82 @@ export default function App() {
         )}
         {stageMode === "iphone" && (
           <>
-            <div className="dynamicIsland" aria-hidden="true" />
+            {/* Dynamic Island demo: click toggles between the black pill and
+                the expanded glass notification panel. Pointer events stop here
+                so toggling never drags the lens underneath. */}
+            <button
+              aria-expanded={islandExpanded}
+              aria-label={islandExpanded ? "Collapse Dynamic Island" : "Expand Dynamic Island"}
+              className={`dynamicIsland${islandExpanded ? " islandExpanded" : ""}${islandDemo === "weather" ? " demoWeather" : ""}`}
+              onClick={cycleIsland}
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerMove={(event) => event.stopPropagation()}
+              ref={dynamicIslandRef}
+              style={
+                {
+                  "--dynamic-island-radius": `${Math.max(0, lens.radius)}px`,
+                } as React.CSSProperties
+              }
+              type="button"
+            >
+              <GlassNode
+                className="dynamicIslandGlass"
+                disabled={!islandExpanded}
+                drawSource={islandDrawSource}
+                engineMode={engineMode}
+                lens={islandLens}
+                lensX={0}
+                lensY={0}
+                renderer={INITIAL_RENDERER}
+                sourceHeight={islandSize.height}
+                sourceWidth={islandSize.width}
+                surfaceBlur={0}
+                surfaceClassName="dynamicIslandGlassSurface"
+                surfaceTone="clear"
+                tint={glassTint}
+              />
+              <span className="islandContent" aria-hidden={!islandExpanded}>
+                {islandDemo === "messages" ? (
+                  <>
+                    <span className="islandHeadline">Here, I found the door code in your messages from Mac.</span>
+                    <span className="islandMessage">
+                      <span className="islandAvatar">MT</span>
+                      <span className="islandMessageBody">
+                        <span className="islandMessageHead">
+                          <b>Mac Tyler</b>
+                          <small>Thursday</small>
+                        </span>
+                        <span className="islandMessageText">
+                          There&rsquo;s a spare key on the hook by the coat rack! The front door code is #1997
+                        </span>
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="islandHeadline">
+                      It&rsquo;ll be fantastic weather for your upcoming tennis lesson this Sunday.
+                    </span>
+                    <span className="islandWeather">
+                      <span className="islandWeatherTop">
+                        <span className="islandWeatherCity">
+                          San Francisco
+                          <IconLocationFill aria-hidden="true" />
+                        </span>
+                        <IconSunMaxFill aria-hidden="true" className="islandWeatherSun" />
+                      </span>
+                      <span className="islandWeatherBottom">
+                        <span className="islandWeatherTemp">63&deg;</span>
+                        <span className="islandWeatherMeta">
+                          <b>Sunny</b>
+                          <small>H:63&deg; L:52&deg;</small>
+                        </span>
+                      </span>
+                    </span>
+                  </>
+                )}
+              </span>
+            </button>
             <div className="homeIndicator" aria-hidden="true" />
           </>
         )}
@@ -739,6 +935,36 @@ export default function App() {
       </section>
 
       <div className="sceneSwitcher">
+        {stageMode === "iphone" && (
+          <div aria-label="Dynamic Island demo" className="islandDemoPicker" role="radiogroup">
+            {ISLAND_DEMOS.map(({ id, label, Icon }) => (
+              <button
+                aria-checked={islandDemo === id}
+                aria-label={`${label} island demo`}
+                className={islandDemo === id ? "islandDemoChip active" : "islandDemoChip"}
+                key={id}
+                onClick={() => {
+                  // Direct jump: disarm the click-cycle so the next island
+                  // open shows exactly the chosen demo. Re-clicking the
+                  // active demo toggles the island; picking a different demo
+                  // switches content and expands right away.
+                  islandCycleArmedRef.current = false;
+                  if (islandDemo === id) {
+                    setIslandExpanded((current) => !current);
+                    return;
+                  }
+                  setIslandDemo(id);
+                  setIslandExpanded(true);
+                }}
+                role="radio"
+                title={label}
+                type="button"
+              >
+                <Icon />
+              </button>
+            ))}
+          </div>
+        )}
         {stageMode === "iphone" && (
           <div aria-label="iPhone wallpaper" className="wallpaperSwatches" role="radiogroup">
             {WALLPAPERS.map((wallpaper) => (
@@ -1274,6 +1500,41 @@ function safeHasPointerCapture(element: Element, pointerId: number): boolean {
   }
 }
 
+const islandBackdropImageCache = new Map<string, HTMLImageElement>();
+
+function getIslandBackdropImage(url: string): HTMLImageElement {
+  const cached = islandBackdropImageCache.get(url);
+  if (cached) return cached;
+
+  const image = new Image();
+  image.decoding = "async";
+  image.src = url;
+  islandBackdropImageCache.set(url, image);
+  return image;
+}
+
+function isImageReady(image: HTMLImageElement): boolean {
+  return image.complete && image.naturalWidth > 0;
+}
+
+function computeCoverSlice(input: {
+  imageWidth: number;
+  imageHeight: number;
+  anchor: DOMRect;
+  target: DOMRect;
+}): { x: number; y: number; width: number; height: number } {
+  const scale = Math.max(input.anchor.width / input.imageWidth, input.anchor.height / input.imageHeight);
+  const width = input.imageWidth * scale;
+  const height = input.imageHeight * scale;
+
+  return {
+    x: input.anchor.left + (input.anchor.width - width) / 2 - input.target.left,
+    y: input.anchor.top + (input.anchor.height - height) / 2 - input.target.top,
+    width,
+    height,
+  };
+}
+
 const styles = `
 * { box-sizing: border-box; }
 body {
@@ -1377,28 +1638,256 @@ button, input { font: inherit; }
   position: absolute;
   left: 50%;
   top: 12px;
-  z-index: 9;
+  z-index: 10;
   width: 122px;
   height: 36px;
-  pointer-events: none;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
   transform: translateX(-50%);
   border-radius: 22px;
   background: #000;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  /* Base values exist so the expand morph can interpolate them. */
   box-shadow:
     0 0 0 0.5px rgba(0, 0, 0, 0.85),
     inset 0 0 3px rgba(255, 255, 255, 0.05);
+  transition:
+    width 460ms cubic-bezier(0.34, 1.25, 0.4, 1),
+    height 460ms cubic-bezier(0.34, 1.25, 0.4, 1),
+    border-radius 460ms cubic-bezier(0.34, 1.25, 0.4, 1),
+    background-color 360ms ease,
+    box-shadow 360ms ease;
 }
-.dynamicIsland::after {
+.dynamicIsland.islandExpanded {
+  width: calc(100% - 22px);
+  height: 198px;
+  border-radius: var(--dynamic-island-radius, 34px);
+  background: transparent;
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.38),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.dynamicIslandGlass {
   position: absolute;
-  right: 9px;
-  top: 50%;
-  width: 18px;
-  height: 18px;
-  content: "";
-  transform: translateY(-50%);
+  inset: 0;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.islandExpanded .dynamicIslandGlass {
+  opacity: 1;
+  transition-delay: 70ms;
+}
+.dynamicIslandGlass .lg-glass-node__canvas {
+  border-radius: inherit;
+}
+.dynamicIslandGlassSurface.lg-glass-surface {
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 var(--lg-glass-highlight),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+.islandContent {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 13px;
+  width: 100%;
+  padding: 19px 18px 15px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition:
+    opacity 140ms ease,
+    transform 160ms ease;
+}
+.islandExpanded .islandContent {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 240ms ease 140ms,
+    transform 300ms cubic-bezier(0.23, 1, 0.32, 1) 140ms;
+}
+.islandHeadline {
+  color: #fff;
+  font-size: 16.5px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  line-height: 1.32;
+}
+.islandMessage {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px 12px 12px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+.islandAvatar {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
-  background: radial-gradient(circle at 36% 34%, #20304c 0%, #0a1020 55%, #000 100%);
-  box-shadow: inset 0 0 2px rgba(120, 160, 255, 0.28);
+  background: linear-gradient(180deg, #a4abbd 0%, #79829a 100%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 620;
+  letter-spacing: 0.4px;
+}
+.islandAvatar::after {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 17px;
+  height: 17px;
+  content: "";
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 42%, #fff 0%, #fff 26%, transparent 30%),
+    linear-gradient(180deg, #5ddb6f, #2eb84e);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.islandMessageBody {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: #fff;
+}
+.islandMessageHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.islandMessageHead b {
+  font-size: 14.5px;
+  font-weight: 680;
+}
+.islandMessageHead small {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  font-weight: 500;
+}
+.islandMessageText {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13.5px;
+  line-height: 1.36;
+}
+/* Weather demo: 3-line headline + the forecast card need a taller panel. */
+.dynamicIsland.islandExpanded.demoWeather {
+  height: 236px;
+}
+.islandWeather {
+  display: grid;
+  gap: 5px;
+  padding: 13px 16px 12px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #4aa3f5 0%, #7fc4f9 100%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 8px 22px rgba(38, 188, 245, 0.18);
+}
+.islandWeatherTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.islandWeatherCity {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 15.5px;
+  font-weight: 650;
+}
+.islandWeatherCity svg {
+  width: 13px;
+  height: auto;
+  fill: #fff;
+}
+.islandWeatherSun {
+  width: 21px;
+  height: auto;
+  fill: #ffd60a;
+  filter: drop-shadow(0 0 6px rgba(255, 214, 10, 0.55));
+}
+.islandWeatherBottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.islandWeatherTemp {
+  font-size: 46px;
+  font-weight: 380;
+  letter-spacing: -0.5px;
+  line-height: 0.98;
+}
+.islandWeatherMeta {
+  display: grid;
+  gap: 1px;
+  text-align: right;
+}
+.islandWeatherMeta b {
+  font-size: 14.5px;
+  font-weight: 620;
+}
+.islandWeatherMeta small {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.96);
+}
+.islandDemoPicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 18px;
+  background: #1a1a1a;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: panelIn 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.islandDemoChip {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.islandDemoChip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.islandDemoChip:active { transform: scale(0.9); }
+.islandDemoChip.active {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+.islandDemoChip svg {
+  width: 13px;
+  height: auto;
+  fill: currentColor;
 }
 .homeIndicator {
   position: absolute;
