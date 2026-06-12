@@ -8,7 +8,7 @@ import {
   type LiquidGlassRenderer,
   type ResolvedLensParams,
 } from "liquid-glass";
-import { IconLocationFill, IconMessageFill, IconSunMaxFill } from "symbols-react";
+import { IconHouseFill, IconLocationFill, IconLockFill, IconMessageFill, IconSunMaxFill } from "symbols-react";
 
 export const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
   ["width", "height", "radius", "mapSize"],
@@ -43,6 +43,7 @@ export type WallpaperId = "painting" | "ferry" | "macaw";
 export type TintMode = "preset" | "custom";
 export type StageMode = "painting" | "iphone";
 export type IslandDemo = "messages" | "weather" | "location";
+export type IphoneScreen = "home" | "passcode";
 export type FloatingControlsPosition = { x: number; y: number };
 export type IslandSize = { width: number; height: number };
 export type FloatingControlsDrag = {
@@ -159,6 +160,27 @@ export const ISLAND_DEMOS: Array<{ id: IslandDemo; label: string; Icon: typeof I
   { id: "messages", label: "Messages notification", Icon: IconMessageFill },
   { id: "weather", label: "Weather forecast", Icon: IconSunMaxFill },
   { id: "location", label: "Find My location", Icon: IconLocationFill },
+];
+
+export const IPHONE_SCREENS: Array<{ id: IphoneScreen; label: string; Icon: typeof IconMessageFill }> = [
+  { id: "home", label: "Home screen", Icon: IconHouseFill },
+  { id: "passcode", label: "Passcode keypad", Icon: IconLockFill },
+];
+
+/** The door code Mac shares in the Messages island demo. */
+export const PASSCODE = "1997";
+
+export const KEYPAD_KEYS: Array<{ digit: string; letters: string }> = [
+  { digit: "1", letters: "" },
+  { digit: "2", letters: "ABC" },
+  { digit: "3", letters: "DEF" },
+  { digit: "4", letters: "GHI" },
+  { digit: "5", letters: "JKL" },
+  { digit: "6", letters: "MNO" },
+  { digit: "7", letters: "PQRS" },
+  { digit: "8", letters: "TUV" },
+  { digit: "9", letters: "WXYZ" },
+  { digit: "0", letters: "" },
 ];
 
 export const DROPDOWN_PREVIEW_ITEMS: GlassDropdownItem[] = [

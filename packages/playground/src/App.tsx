@@ -27,6 +27,7 @@ import {
   PAINTING_URL,
   WALLPAPERS,
   type ComponentVisibility,
+  type IphoneScreen,
   type StageMode,
   type TintMode,
   type VisibilityKey,
@@ -48,6 +49,7 @@ export default function App() {
   const renderMode: LiquidGlassRenderMode = "target";
   const [visibility, setVisibility] = useState<ComponentVisibility>(INITIAL_VISIBILITY);
   const [stageMode, setStageMode] = useState<StageMode>("painting");
+  const [iphoneScreen, setIphoneScreen] = useState<IphoneScreen>("home");
   const [sceneMenuOpen, setSceneMenuOpen] = useState(false);
   const [pressHighlight, setPressHighlight] = useState<GlassPressHighlight>("natural");
   const [wallpaperId, setWallpaperId] = useState<WallpaperId>("painting");
@@ -131,6 +133,7 @@ export default function App() {
         glassChromeRef={glassChromeRef}
         glassChromeSecondRef={glassChromeSecondRef}
         glassTint={glassTint}
+        iphoneScreen={iphoneScreen}
         islandDemo={islandDemo}
         islandExpanded={islandExpanded}
         lens={lens}
@@ -153,7 +156,9 @@ export default function App() {
       />
 
       <SceneSwitcher
+        iphoneScreen={iphoneScreen}
         islandDemo={islandDemo}
+        onIphoneScreenSelect={setIphoneScreen}
         onIslandDemoSelect={selectIslandDemo}
         onSceneMenuOpenChange={setSceneMenuOpen}
         onStageModeChange={setStageMode}

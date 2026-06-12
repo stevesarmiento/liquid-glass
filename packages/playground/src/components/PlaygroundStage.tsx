@@ -4,7 +4,8 @@ import type { GlassPressHighlight } from "@liquid-glass/design-system";
 
 import { ComponentDock } from "./ComponentDock";
 import { DynamicIslandDemo } from "./DynamicIslandDemo";
-import { PAINTING_URL, type ComponentVisibility, type IslandDemo, type StageMode } from "../playgroundConfig";
+import { LockScreenKeypad } from "./LockScreenKeypad";
+import { PAINTING_URL, type ComponentVisibility, type IphoneScreen, type IslandDemo, type StageMode } from "../playgroundConfig";
 import { formatHighlightPosition, formatHighlightRotation, safeHasPointerCapture, safeSetPointerCapture } from "../playgroundUtils";
 
 interface PlaygroundStageProps {
@@ -17,6 +18,7 @@ interface PlaygroundStageProps {
   glassChromeRef: RefObject<HTMLDivElement | null>;
   glassChromeSecondRef: RefObject<HTMLDivElement | null>;
   glassTint: GlassTintName | GlassTintInput;
+  iphoneScreen: IphoneScreen;
   islandDemo: IslandDemo;
   islandExpanded: boolean;
   lens: ResolvedLensParams;
@@ -48,6 +50,7 @@ export const PlaygroundStage = memo(function PlaygroundStage({
   glassChromeRef,
   glassChromeSecondRef,
   glassTint,
+  iphoneScreen,
   islandDemo,
   islandExpanded,
   lens,
@@ -155,6 +158,17 @@ export const PlaygroundStage = memo(function PlaygroundStage({
             onCycle={onIslandCycle}
             renderer={renderer}
           />
+          {iphoneScreen === "passcode" && (
+            <LockScreenKeypad
+              backgroundUrl={backgroundUrl}
+              containerRef={containerRef}
+              engineMode={engineMode}
+              glassTint={glassTint}
+              lens={lens}
+              pressHighlight={pressHighlight}
+              renderer={renderer}
+            />
+          )}
           <div className="homeIndicator" aria-hidden="true" />
         </>
       )}

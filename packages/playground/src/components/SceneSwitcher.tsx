@@ -1,9 +1,20 @@
 import { memo } from "react";
 
-import { ISLAND_DEMOS, STAGE_SCENES, WALLPAPERS, type IslandDemo, type StageMode, type WallpaperId } from "../playgroundConfig";
+import {
+  IPHONE_SCREENS,
+  ISLAND_DEMOS,
+  STAGE_SCENES,
+  WALLPAPERS,
+  type IphoneScreen,
+  type IslandDemo,
+  type StageMode,
+  type WallpaperId,
+} from "../playgroundConfig";
 
 interface SceneSwitcherProps {
+  iphoneScreen: IphoneScreen;
   islandDemo: IslandDemo;
+  onIphoneScreenSelect: (id: IphoneScreen) => void;
   onIslandDemoSelect: (id: IslandDemo) => void;
   onSceneMenuOpenChange: (open: boolean) => void;
   onStageModeChange: (mode: StageMode) => void;
@@ -14,7 +25,9 @@ interface SceneSwitcherProps {
 }
 
 export const SceneSwitcher = memo(function SceneSwitcher({
+  iphoneScreen,
   islandDemo,
+  onIphoneScreenSelect,
   onIslandDemoSelect,
   onSceneMenuOpenChange,
   onStageModeChange,
@@ -27,6 +40,24 @@ export const SceneSwitcher = memo(function SceneSwitcher({
 
   return (
     <div className="sceneSwitcher">
+      {stageMode === "iphone" && (
+        <div aria-label="iPhone screen" className="islandDemoPicker" role="radiogroup">
+          {IPHONE_SCREENS.map(({ id, label, Icon }) => (
+            <button
+              aria-checked={iphoneScreen === id}
+              aria-label={label}
+              className={iphoneScreen === id ? "islandDemoChip active" : "islandDemoChip"}
+              key={id}
+              onClick={() => onIphoneScreenSelect(id)}
+              role="radio"
+              title={label}
+              type="button"
+            >
+              <Icon />
+            </button>
+          ))}
+        </div>
+      )}
       {stageMode === "iphone" && (
         <div aria-label="Dynamic Island demo" className="islandDemoPicker" role="radiogroup">
           {ISLAND_DEMOS.map(({ id, label, Icon }) => (
