@@ -45,6 +45,7 @@ import { drawRoundedRect, getCanvasBackgroundColor } from "../../../lib/canvas";
 import { useGlobalCssOnce } from "../../../lib/globalCss";
 import { safeReleasePointerCapture, safeSetPointerCapture } from "../../../lib/pointer";
 import useGlassTheme from "../../../hooks/useGlassTheme";
+import useCanvasSourceStyles from "../../../hooks/useCanvasSourceStyles";
 
 const DEFAULT_MIN = 0;
 const DEFAULT_MAX = 100;
@@ -53,7 +54,9 @@ const KEYBOARD_ACTIVE_RELEASE_MS = 320;
 const DEFORMATION_MAX_PX = 10;
 const DEFORMATION_FALLOFF_PX = 80;
 const DEFORMATION_LAG_MAX_PX = 4;
-const DEFAULT_SLIDER_OPTICS: Omit<LensParams, "width" | "height" | "radius"> = {
+// mapSize deliberately omitted: GlassNode derives it from the lens size in
+// device pixels (autoMapSize), keeping thumb-sized maps small and cacheable.
+const DEFAULT_SLIDER_OPTICS: Omit<LensParams, "width" | "height" | "radius" | "mapSize"> = {
   scaleX: 38,
   scaleY: 38,
   chroma: 0.45,
@@ -62,8 +65,7 @@ const DEFAULT_SLIDER_OPTICS: Omit<LensParams, "width" | "height" | "radius"> = {
   splay: 0.49,
   glow: 0.55,
   edge: 0.55,
-  blur: 0.8,
-  mapSize: 256
+  blur: 0.8
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
@@ -175,7 +177,7 @@ const GlassSlider = ({
   const valuePercent = getPercent(currentValue, min, max);
   const valueRatio = valuePercent / 100;
   const sizePreset = GLASS_SLIDER_SIZE_PRESETS[size];
-  const lens: LensParams = {
+  const lens = {
     ...DEFAULT_SLIDER_OPTICS,
     ...sizePreset.lens,
     ...glassLens
@@ -215,12 +217,29 @@ const GlassSlider = ({
     lensGeometry.lensTravelCenterX + (lensGeometry.lensX - lensGeometry.lensTravelCenterX) * 0.86;
   const canRenderGlass = isGlassActive && controlSize.width > 0 && controlSize.height > 0;
 
+  // Style sampling hoisted out of the draw path (drawSource runs per drag
+  // frame); the sampled key feeds sourceVersion so theme/CSS changes repaint.
+  const sourceStyles = useCanvasSourceStyles(
+    controlRef,
+    (control) => {
+      const hostStyle = getComputedStyle(control);
+      return {
+        trackColor: hostStyle.getPropertyValue("--lgds-slider-track-bg").trim() || resolvedTrackColor,
+        fillColor: hostStyle.getPropertyValue("--lgds-slider-fill-bg").trim() || resolvedFillColor,
+        sourceBackground: getCanvasBackgroundColor(control)
+      };
+    },
+    [theme, resolvedTrackColor, resolvedFillColor, controlSize.width, controlSize.height]
+  );
+
+  // valuePercent changes per drag frame, so drag repaints are preserved.
+  const sourceVersion = `${valuePercent}|${sourceStyles.key}|${resolvedTrackHeight}`;
+
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
-    const hostStyle = getComputedStyle(controlRef.current ?? ctx.canvas);
-    const trackColor =
-      hostStyle.getPropertyValue("--lgds-slider-track-bg").trim() || resolvedTrackColor;
-    const fillColor = hostStyle.getPropertyValue("--lgds-slider-fill-bg").trim() || resolvedFillColor;
-    const sourceBackground = getCanvasBackgroundColor(controlRef.current ?? ctx.canvas);
+    const styles = sourceStyles.get();
+    const trackColor = styles?.trackColor ?? resolvedTrackColor;
+    const fillColor = styles?.fillColor ?? resolvedFillColor;
+    const sourceBackground = styles?.sourceBackground ?? "#ffffff";
     const trackLeft = metrics.lensWidth / 2;
     const trackWidth = Math.max(0, metrics.sourceWidth - metrics.lensWidth);
     const trackTop = metrics.sourceHeight / 2 - resolvedTrackHeight / 2;
@@ -424,6 +443,7 @@ const GlassSlider = ({
                   contentClassName={glassContentClassName}
                   drawSource={drawSource}
                   engineMode={engineMode}
+                  sourceVersion={sourceVersion}
                   lens={lens}
                   lensX={lensSourceX}
                   lensY={lensGeometry.lensY}

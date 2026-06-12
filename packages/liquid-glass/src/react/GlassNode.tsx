@@ -10,7 +10,7 @@ import {
 } from "react";
 
 import { getSharedLiquidGlassEngine } from "../engine/create-engine";
-import { normalizeLensParams } from "../engine/defaults";
+import { DEFAULT_LENS_PARAMS, autoMapSize, normalizeLensParams } from "../engine/defaults";
 import { colorMatrixStringForScale, mapKey } from "../engine/ts-engine";
 import type { LensParams, LiquidGlassEngineMode } from "../engine/types";
 import { getGlassFilterBleed, getGlassFilterVersion } from "../web/filter-version";
@@ -19,9 +19,10 @@ import {
   type GlassCanvasSource,
   type GlassRendererMode,
 } from "../web/local-canvas";
-import { displacementMapToPngDataUrl } from "../web/png";
-import { renderLocalGlassWebgl } from "../web/webgl-local";
-import { createWebglGlassRenderer, type WebglGlassRenderer } from "../web/webgl-renderer";
+import { getSharedGlassCompositor, type GlassCompositorInstance } from "../web/glass-compositor";
+import { getCachedDisplacementMapPngUrl } from "../web/map-url-cache";
+import { countGlassDraw } from "../web/perf-stats";
+import { buildLocalGlassDrawInput } from "../web/webgl-local";
 import {
   resolveGlassTint,
   withTintBackgroundAlpha,
@@ -31,8 +32,10 @@ import {
 } from "../web/tints";
 import { GlassSurface, type GlassTone } from "./GlassSurface";
 import { ensureLiquidGlassStyles } from "./inject-styles";
+import { useGlassQualityLevel } from "./useGlassQualityLevel";
 import { useIsSafari } from "./useIsSafari";
 import { usePrefersReducedTransparency } from "./usePrefersReducedTransparency";
+import { useRenderGate } from "./useRenderGate";
 
 export interface GlassNodeProps {
   lens?: Partial<LensParams>;
@@ -44,6 +47,16 @@ export interface GlassNodeProps {
   engineMode?: LiquidGlassEngineMode;
   sourceChildren?: ReactNode;
   drawSource?: GlassCanvasSource;
+  /**
+   * Content version of `drawSource`'s output. When provided, redraws are
+   * keyed on this value instead of the callback's identity — parents can pass
+   * a fresh closure every render without forcing a repaint, and bump the
+   * version when (and only when) the drawn content actually changes. Fold in
+   * EVERYTHING that affects the drawn pixels (state, theme colors, sizes).
+   * When omitted, the legacy behavior applies: a new `drawSource` identity
+   * triggers a redraw.
+   */
+  sourceVersion?: string | number;
   className?: string;
   contentClassName?: string;
   surfaceClassName?: string;
@@ -56,6 +69,19 @@ export interface GlassNodeProps {
    * skipping refraction and rendering an opaque-ish tinted surface instead.
    */
   respectReducedTransparency?: boolean;
+  /**
+   * When true (the default), participate in the global adaptive quality
+   * governor: under sustained main-thread pressure the node degrades in steps
+   * (smaller maps → no chroma separation → surface-only) and recovers when
+   * the budget allows. Set false to always render at full quality.
+   */
+  adaptiveQuality?: boolean;
+  /**
+   * When true (the default), suspend drawing while the node is offscreen or
+   * the tab is hidden (the last rendered frame is kept), and repaint on
+   * re-entry.
+   */
+  pauseOffscreen?: boolean;
   disabled?: boolean;
 }
 
@@ -69,6 +95,7 @@ export function GlassNode({
   engineMode = "auto",
   sourceChildren,
   drawSource,
+  sourceVersion,
   className,
   contentClassName,
   surfaceClassName,
@@ -77,19 +104,43 @@ export function GlassNode({
   tint: tintInput = "clear",
   safariRefresh = true,
   respectReducedTransparency = true,
+  adaptiveQuality = true,
+  pauseOffscreen = true,
   disabled = false,
 }: GlassNodeProps): ReactElement {
   const id = useId();
+  const rootRef = useRef<HTMLSpanElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const webglRef = useRef<GlassNodeWebglState | null>(null);
   const isSafari = useIsSafari();
   const prefersReducedTransparency = usePrefersReducedTransparency();
-  const reducedTransparency = respectReducedTransparency && prefersReducedTransparency;
+  const qualityLevel = useGlassQualityLevel(adaptiveQuality);
+  // Quality level 3 reuses the reduced-transparency fallback verbatim:
+  // surface chrome + tint, no refraction.
+  const reducedTransparency =
+    (respectReducedTransparency && prefersReducedTransparency) || qualityLevel >= 3;
+  const gateActive = useRenderGate(rootRef, { enabled: pauseOffscreen });
   const [readyVersion, setReadyVersion] = useState(0);
   const [mapUrl, setMapUrl] = useState("");
   const [webglFailed, setWebglFailed] = useState(false);
   const engine = useMemo(() => getSharedLiquidGlassEngine({ mode: engineMode }), [engineMode]);
-  const lens = useMemo(() => normalizeLensParams(lensInput), [JSON.stringify(lensInput ?? {})]);
+  // When the caller doesn't pin mapSize, derive it from the lens size in
+  // device pixels — small controls get proportionally small (cheap) maps.
+  // Adaptive quality: L1+ halves the auto map size, L2+ drops chromatic
+  // separation (one refraction sample instead of three).
+  const lens = useMemo(() => {
+    const input = lensInput ?? {};
+    const quality = qualityLevel >= 2 ? { chroma: 0 } : null;
+    if (input.mapSize !== undefined) return normalizeLensParams({ ...input, ...quality });
+    const pixelRatio = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const width = input.width ?? DEFAULT_LENS_PARAMS.width;
+    const height = input.height ?? DEFAULT_LENS_PARAMS.height;
+    const mapSize = Math.max(
+      32,
+      autoMapSize(width, height, pixelRatio) / (qualityLevel >= 1 ? 2 : 1),
+    );
+    return normalizeLensParams({ ...input, ...quality, mapSize });
+  }, [JSON.stringify(lensInput ?? {}), qualityLevel]);
   const baseTint = useMemo(() => resolveGlassTint(tintInput), [JSON.stringify(tintInput)]);
   const tint = reducedTransparency ? withTintBackgroundAlpha(baseTint, 0.85) : baseTint;
   const activeRenderer = resolveRenderer({ renderer, isSafari, hasCanvasSource: Boolean(drawSource), hasSvgSource: Boolean(sourceChildren) });
@@ -140,47 +191,76 @@ export function GlassNode({
 
   // Generate the displacement map post-commit instead of synchronously during
   // render; the filter renders neutral (gray flood) until the URL is ready.
+  // Both the map and its PNG encoding are served from global caches shared
+  // across every GlassNode with the same optical params.
   useEffect(() => {
+    // Gated: keep the current filter while offscreen/hidden; re-entry flips
+    // gateActive and re-runs this effect with the latest props.
+    if (!gateActive) return;
     if (!canRender || activeRenderer !== "svg" || typeof document === "undefined") {
       setMapUrl("");
       return;
     }
-    setMapUrl(displacementMapToPngDataUrl(engine.generateDisplacementMap(lens)));
-  }, [activeRenderer, canRender, engine, lensMapKey, readyVersion]);
+    setMapUrl(getCachedDisplacementMapPngUrl(engine, lens));
+    countGlassDraw("svg");
+  }, [activeRenderer, canRender, engine, gateActive, lensMapKey, readyVersion]);
 
-  // Destroy the GPU renderer (textures, FBOs, programs, context) on unmount.
+  // Release the shared-compositor registration on unmount (the page-level
+  // GL context and programs stay alive for other glass nodes).
   useEffect(
     () => () => {
-      webglRef.current?.renderer.destroy();
+      webglRef.current?.instance.destroy();
       webglRef.current = null;
     },
     [],
   );
 
+  // The draw callback lives in a ref so the draw effect can key on the
+  // CONTENT version (`sourceVersion`) instead of the closure's identity while
+  // still always invoking the freshest closure. Without a sourceVersion the
+  // closure identity itself is the dependency (legacy behavior).
+  const drawSourceRef = useRef(drawSource);
+  drawSourceRef.current = drawSource;
+  const hasDrawSource = Boolean(drawSource);
+  const sourceContentKey: unknown = sourceVersion !== undefined ? sourceVersion : drawSource;
+
   useEffect(() => {
-    if (!canRender || activeRenderer !== "canvas" || !drawSource || !canvasRef.current) return;
+    // Gated: the canvas keeps its last frame while offscreen/hidden; re-entry
+    // flips gateActive and redraws with the latest props.
+    if (!gateActive) return;
+    const source = drawSourceRef.current;
+    if (!canRender || activeRenderer !== "canvas" || !source || !canvasRef.current) return;
     const canvas = canvasRef.current;
+    // Lets the GPU path skip the source redraw + scene upload + blur when the
+    // content is unchanged. lensX/lensY are folded in because they are part
+    // of the draw metrics a source may legitimately read.
+    const sceneKey =
+      sourceVersion !== undefined ? `v:${sourceVersion}|${lensX},${lensY}` : undefined;
 
     if (useWebglBackend) {
       let entry = webglRef.current;
       if (entry && entry.canvas !== canvas) {
-        entry.renderer.destroy();
+        entry.instance.destroy();
         entry = null;
         webglRef.current = null;
       }
       if (!entry) {
-        const glRenderer = createWebglGlassRenderer(canvas, {
-          onContextLost: () => setWebglFailed(true),
+        // One page-level GL context shared by every glass node; this node
+        // only registers a blit target on it. Null = no WebGL2 (or the
+        // compositor failed permanently) -> CPU canvas path.
+        const compositor = getSharedGlassCompositor();
+        const instance = compositor?.register({
+          canvas,
+          onFallback: () => setWebglFailed(true),
         });
-        if (!glRenderer) {
+        if (!instance) {
           setWebglFailed(true);
           return;
         }
-        entry = { canvas, renderer: glRenderer, sceneCanvas: document.createElement("canvas") };
+        entry = { canvas, instance, sceneCanvas: document.createElement("canvas") };
         webglRef.current = entry;
       }
-      const rendered = renderLocalGlassWebgl({
-        renderer: entry.renderer,
+      const build = buildLocalGlassDrawInput({
         sceneCanvas: entry.sceneCanvas,
         engine,
         lens,
@@ -188,20 +268,27 @@ export function GlassNode({
         sourceHeight,
         lensX,
         lensY,
-        source: drawSource,
+        source,
+        sceneKey,
       });
-      if (rendered) return;
-      // The canvas is locked to a webgl2 context now; flag the failure so the
-      // element remounts (via key) and the CPU path gets a fresh canvas.
-      entry.renderer.destroy();
+      const rendered = build !== null && entry.instance.update(build.input);
+      if (rendered && build) {
+        canvas.style.width = `${build.cssWidth}px`;
+        canvas.style.height = `${build.cssHeight}px`;
+        return;
+      }
+      // Compositor could not render (no 2D scratch context, lost/failed GL).
+      // The visible canvas only ever held a 2D context, so the CPU path can
+      // reuse it directly.
+      entry.instance.destroy();
       webglRef.current = null;
       setWebglFailed(true);
       return;
     }
 
-    // Release any GPU resources left over from a previous webgl backend.
+    // Release any compositor registration left over from the webgl backend.
     if (webglRef.current) {
-      webglRef.current.renderer.destroy();
+      webglRef.current.instance.destroy();
       webglRef.current = null;
     }
     renderLocalGlassCanvas({
@@ -212,12 +299,14 @@ export function GlassNode({
       sourceHeight,
       lensX,
       lensY,
-      source: drawSource,
+      source,
     });
   }, [
     activeRenderer,
     canRender,
-    drawSource,
+    gateActive,
+    hasDrawSource,
+    sourceContentKey,
     engine,
     lens,
     lensX,
@@ -231,7 +320,7 @@ export function GlassNode({
   const classes = ["lg-glass-node", className].filter(Boolean).join(" ");
 
   return (
-    <span className={classes}>
+    <span className={classes} ref={rootRef}>
       {canRender && activeRenderer === "svg" && sourceChildren ? (
         <>
           <LocalSvgFilter
@@ -270,14 +359,11 @@ export function GlassNode({
       ) : null}
 
       {canRender && activeRenderer === "canvas" && drawSource ? (
-        // Keyed by backend: a canvas whose webgl2 context was created can
-        // never hand out a 2D context, so the CPU fallback needs a fresh node.
-        <canvas
-          aria-hidden="true"
-          className="lg-glass-node__canvas"
-          key={useWebglBackend ? "webgl" : "cpu"}
-          ref={canvasRef}
-        />
+        // No backend remount key needed: the visible canvas is always a 2D
+        // blit/draw target (the shared compositor owns the only GL context),
+        // so GPU -> CPU fallback reuses the same element — and the last
+        // blitted pixels survive a GL context loss instead of flashing blank.
+        <canvas aria-hidden="true" className="lg-glass-node__canvas" ref={canvasRef} />
       ) : null}
 
       <GlassSurface
@@ -450,7 +536,7 @@ function LocalSvgFilter({
 
 interface GlassNodeWebglState {
   canvas: HTMLCanvasElement;
-  renderer: WebglGlassRenderer;
+  instance: GlassCompositorInstance;
   sceneCanvas: HTMLCanvasElement;
 }
 

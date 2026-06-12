@@ -67,31 +67,13 @@ export const LIQUID_GLASS_STYLES = `.lg-glass-surface {
     inset 0 -1px 0 rgba(0, 0, 0, 0.24);
 }
 
+/* No hover treatment by design — press is the only state cue. The
+   interactive variant keeps its transitions so tint/chrome swaps driven by
+   state (press saturation, theme changes) interpolate instead of snapping. */
 .lg-glass-surface--interactive {
   transition:
     border-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
     box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.lg-glass-surface--interactive:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  box-shadow:
-    0 20px 54px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.54),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .lg-glass-surface--interactive {
-    transition:
-      border-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
-      box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1),
-      transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-
-  .lg-glass-surface--interactive:hover {
-    transform: translateY(-1px);
-  }
 }
 
 .lg-glass-surface__shine {
@@ -241,7 +223,15 @@ let injected = false;
 export function ensureLiquidGlassStyles(): void {
   if (injected) return;
   if (typeof document === "undefined") return;
-  if (document.head.querySelector(`style[${STYLE_ATTRIBUTE}]`)) {
+  const existing = document.head.querySelector(`style[${STYLE_ATTRIBUTE}]`);
+  if (existing) {
+    // Refresh stale content: under dev hot-reload this module re-evaluates
+    // with NEW css, but the tag injected by the previous module instance
+    // survives in the document — without this sync, style changes would not
+    // apply until a full page reload.
+    if (existing.textContent !== LIQUID_GLASS_STYLES) {
+      existing.textContent = LIQUID_GLASS_STYLES;
+    }
     injected = true;
     return;
   }

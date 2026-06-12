@@ -50,6 +50,26 @@ export function normalizeLensParams(input: Partial<LensParams> = {}): ResolvedLe
   };
 }
 
+/**
+ * Default map resolution for a lens of the given CSS size: the next power of
+ * two covering the lens's longest side in device pixels, clamped to [32, 512].
+ * Small controls (switch knobs, button faces) get proportionally small maps —
+ * a 36×22 knob at 2× dpr resolves to 128² instead of the global 256–512²
+ * default, a 4–16× cut in per-map generation cost. Powers of two keep the
+ * cache key space small so the global LRU map cache stays hot.
+ *
+ * Used by component-local rendering (GlassNode); the scene-level controller
+ * and merged maps keep their explicit sizes.
+ */
+export function autoMapSize(width: number, height: number, pixelRatio = 1): number {
+  const longest = Math.max(1, Math.max(width, height)) * Math.max(1, pixelRatio);
+  return clamp(ceilPow2(longest), 32, 512);
+}
+
+function ceilPow2(value: number): number {
+  return 2 ** Math.ceil(Math.log2(Math.max(1, value)));
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }

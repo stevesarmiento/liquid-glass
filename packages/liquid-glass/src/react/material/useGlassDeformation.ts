@@ -48,8 +48,12 @@ export interface GlassDeformationOptions {
    * - "press": centered compression. The element constricts along the axis
    *   around its center (no translation) and bulges on the cross axis — a
    *   press squish.
+   * - "swell": centered expansion. The element grows along the axis around
+   *   its center and grows on the cross axis by `volumeConservation` — a
+   *   press that makes the material rise toward the finger instead of
+   *   compressing (volumeConservation 1 = uniform scale-up).
    */
-  mode?: "pull" | "press";
+  mode?: "pull" | "press" | "swell";
   /**
    * Extent of the element along the deformation axis, in px; normalizes the
    * stretch factor. Defaults to the element's measured size.
@@ -205,9 +209,11 @@ export function useGlassDeformation<T extends HTMLElement>(
       const size = Math.max(1, sizePx ?? (vertical ? element.offsetHeight : element.offsetWidth));
       const stretch = (Math.abs(deformationPx) / size) * STRETCH_RATIO;
 
-      if (mode === "press") {
-        // Centered compression: the axis constricts, the cross axis bulges.
-        const scaleAlong = Math.max(0.01, 1 - stretch);
+      if (mode === "press" || mode === "swell") {
+        // Centered press deformation: "press" constricts the axis while the
+        // cross axis bulges; "swell" grows both (the material rises toward
+        // the finger instead of compressing).
+        const scaleAlong = mode === "swell" ? 1 + stretch : Math.max(0.01, 1 - stretch);
         const scaleAcross = 1 + stretch * volumeConservation;
         element.style.transformOrigin = "center";
         element.style.transform = vertical

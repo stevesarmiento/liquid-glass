@@ -30,7 +30,7 @@ const PROP_ROWS: PropRow[] = [
   { name: "triggerSize", type: "number", defaultValue: "48", description: "Trigger circle diameter in px (the constant lens L0 of the merged blob)." },
   { name: "menuWidth", type: "number", defaultValue: "224", description: "Open menu width in px. Menu height is measured from the items." },
   { name: "placement", type: '"bottom-start" | "bottom" | "bottom-end"', defaultValue: '"bottom-start"', description: "Horizontal alignment of the menu against the trigger; the menu always opens below." },
-  { name: "gap", type: "number", defaultValue: "10", description: "Trigger → menu gap in px. The settled goo bridges this gap with a liquid meniscus." },
+  { name: "gap", type: "number", defaultValue: "0", description: "Top inset of the open menu over the trigger, in px. At 0 the settled menu replaces the button instead of leaving a separate bubble above it." },
   { name: "blend", type: "number", defaultValue: "36", description: "Smooth-union (goo) blend distance in px. Larger = thicker liquid neck during the morph." },
   { name: "glassBackdrop", type: "{ image: string; anchor?: RefObject<HTMLElement | null> }", description: "REQUIRED for the goo: the merged WebGL renderer refracts a pixel scene, sliced from this image with CSS cover semantics against the anchor element (default: the dropdown's offsetParent). Same contract as GlassButton." },
   { name: "glassTint", type: "GlassTintName | GlassTintInput | GlassTint", defaultValue: '"frost"', description: "Glass chrome tint. The shader derives the fill, 1.5px border band, rim highlight, interior glow, saturation, and drop shadow from it (mirroring the controller's merged chrome mapping)." },
@@ -164,8 +164,8 @@ export default function GlassDropdownPage() {
           One WebGL canvas spans the whole dropdown region and renders two lenses through a shared
           merged displacement map: the trigger circle (constant) and the menu lens, animated by a
           spring. While opening, the menu lens pulls out of the circle and the smooth-union blend
-          forms a gooey neck between them; settled open, the two read as one connected blob bridged
-          across the gap. Closing reabsorbs the menu back into the trigger. Menu items are real DOM
+          forms a gooey neck between them; settled open, the menu overlaps the trigger so the two
+          read as one surface and the button is absorbed into the panel. Closing reabsorbs the menu back into the trigger. Menu items are real DOM
           on top of the glass — they stagger in once the goo has mostly poured and are never
           refracted.
         </p>

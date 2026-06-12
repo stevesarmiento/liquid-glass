@@ -1,6 +1,8 @@
 import { normalizeLensParams } from "../engine/defaults";
 import { createLiquidGlassEngine } from "../engine/create-engine";
+import { getCachedDisplacementMap } from "../engine/map-cache";
 import type { LensParams, LiquidGlassEngine } from "../engine/types";
+import { countGlassDraw } from "./perf-stats";
 import {
   CANVAS_STRENGTH,
   applyCanvasBlur,
@@ -98,7 +100,7 @@ export function renderLocalGlassCanvas(input: LocalGlassCanvasRenderInput): Loca
   applyCanvasBlur(blurredCtx, sourceWidth, sourceHeight, lens.blur, pixelRatio);
 
   const mapStarted = performance.now();
-  const map = engine.generateDisplacementMap(lens);
+  const map = getCachedDisplacementMap(engine, lens);
   const mapMs = performance.now() - mapStarted;
   const scenePixels = blurredCtx.getImageData(0, 0, sourceWidth, sourceHeight);
   const output = ctx.createImageData(lensWidth, lensHeight);
@@ -146,6 +148,7 @@ export function renderLocalGlassCanvas(input: LocalGlassCanvasRenderInput): Loca
   }
 
   ctx.putImageData(output, 0, 0);
+  countGlassDraw("canvas");
 
   return {
     renderer: "canvas",

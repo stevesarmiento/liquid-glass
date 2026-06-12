@@ -1,5 +1,6 @@
 import { normalizeLensParams } from "../engine/defaults";
 import { getSharedLiquidGlassEngine } from "../engine/create-engine";
+import { getCachedDisplacementMap } from "../engine/map-cache";
 import {
   MERGED_ALPHA_DISTANCE_RANGE,
   generateMergedDisplacementMap,
@@ -17,7 +18,9 @@ import type {
 } from "../engine/types";
 import { setAttr, setHref, setStyle } from "./dom";
 import { isSafari } from "./is-safari";
+import { countGlassDraw, countMapGeneratedOutsideCache } from "./perf-stats";
 import { displacementMapToPngDataUrl } from "./png";
+import { createRenderGate, type RenderGate } from "./render-gate";
 import {
   CANVAS_STRENGTH,
   applyCanvasBlur,
@@ -108,6 +111,11 @@ export interface LiquidGlassControllerOptions {
    * skipping the displacement filter entirely.
    */
   respectReducedTransparency?: boolean;
+  /**
+   * When true (the default), defer applies while the container is offscreen
+   * or the tab is hidden; the deferred apply runs on re-entry.
+   */
+  pauseOffscreen?: boolean;
   onStats?: (stats: LiquidGlassControllerStats) => void;
 }
 
@@ -182,6 +190,15 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
   // Chrome uniforms parsed from the resolved tint, cached per tint identity
   // so merged drag frames never re-parse CSS color strings.
   let chromeCache: { key: string; chrome: WebglGlassChrome } | null = null;
+  // Idle hardening: skip renderer draws / SVG geometry formatting when the
+  // full set of draw inputs is unchanged (e.g. ResizeObserver no-op ticks).
+  let lastWebglDrawKey = "";
+  let lastCanvasDrawKey = "";
+  let lastSvgGeometryKey = "";
+  // Offscreen/hidden gating (pauseOffscreen): applies are deferred while
+  // gated and replayed on re-entry.
+  let renderGate: RenderGate | null = null;
+  let pendingWhileGated = false;
 
   // Reduced-transparency media query (guard absence, e.g. jsdom/older engines).
   let reducedTransparency = false;
@@ -205,6 +222,16 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
   const observedElements = new Set<Element>();
   if (typeof ResizeObserver !== "undefined") {
     resizeObserver = new ResizeObserver(() => scheduleApply());
+  }
+
+  if (options.pauseOffscreen ?? true) {
+    renderGate = createRenderGate(state.container);
+    renderGate.subscribe((active) => {
+      if (active && pendingWhileGated && !destroyed) {
+        pendingWhileGated = false;
+        scheduleApply();
+      }
+    });
   }
 
   state.container.prepend(elements.svg);
@@ -256,6 +283,8 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       rafId = null;
       resizeObserver?.disconnect();
       observedElements.clear();
+      renderGate?.destroy();
+      renderGate = null;
       transparencyQuery?.removeEventListener?.("change", onTransparencyChange);
       elements.svg.remove();
       canvasRenderer.canvas.remove();
@@ -288,6 +317,12 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
   /** Coalesce all applies into one per frame (latest state wins). */
   function scheduleApply(): void {
     if (destroyed) return;
+    // Offscreen/hidden: remember that work is pending and run it on re-entry
+    // (the latest state wins, exactly like rAF coalescing).
+    if (renderGate && !renderGate.active) {
+      pendingWhileGated = true;
+      return;
+    }
     if (typeof requestAnimationFrame !== "function") {
       apply();
       return;
@@ -377,7 +412,9 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
 
     if (key !== lastMapKey || !lastMap) {
       const mapStarted = performance.now();
-      lastMap = engine.generateDisplacementMap(lens);
+      // Served from the global cross-controller map cache (identity-stable,
+      // so the WebGL renderer skips re-uploading an unchanged map texture).
+      lastMap = getCachedDisplacementMap(engine, lens);
       lastMapUrl = "";
       lastMapKey = key;
       stats.lastMapMs = performance.now() - mapStarted;
@@ -404,22 +441,41 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       }
       if (image && lastMap) {
         const containerRect = state.container.getBoundingClientRect();
-        webglRenderer.render({
-          scene: image,
-          sceneKey: [
-            image.currentSrc || image.src,
-            image.naturalWidth,
-            image.naturalHeight,
-            Math.round(lens.blur * 100),
-          ].join("|"),
-          map: lastMap,
-          lens,
-          geometry,
-          sceneWidth: containerRect.width,
-          sceneHeight: containerRect.height,
-        });
+        const sceneKey = [
+          image.currentSrc || image.src,
+          image.naturalWidth,
+          image.naturalHeight,
+          Math.round(lens.blur * 100),
+        ].join("|");
+        // Skip the GPU pass entirely when every draw input is unchanged
+        // (e.g. a ResizeObserver tick that didn't actually move anything).
+        const drawKey = [
+          "w",
+          sceneKey,
+          key,
+          geometry.left,
+          geometry.top,
+          geometry.width,
+          geometry.height,
+          geometry.radius,
+          containerRect.width,
+          containerRect.height,
+        ].join("|");
+        if (drawKey !== lastWebglDrawKey) {
+          webglRenderer.render({
+            scene: image,
+            sceneKey,
+            map: lastMap,
+            lens,
+            geometry,
+            sceneWidth: containerRect.width,
+            sceneHeight: containerRect.height,
+          });
+          lastWebglDrawKey = drawKey;
+        }
       } else {
         webglRenderer.clear();
+        lastWebglDrawKey = "";
       }
       finishApply(applyStarted, domWrites, activeRenderer);
       return;
@@ -436,15 +492,34 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
         domWrites += Number(setStyle(inactive, "filter", ""));
       }
       if (image && lastMap) {
-        canvasRenderer.draw({
-          containerRect: state.container.getBoundingClientRect(),
-          geometry,
-          image,
-          lens,
-          map: lastMap,
-        });
+        const containerRect = state.container.getBoundingClientRect();
+        // Skip the CPU per-pixel loop entirely on no-op applies.
+        const drawKey = [
+          "c",
+          image.currentSrc || image.src,
+          key,
+          geometry.left,
+          geometry.top,
+          geometry.width,
+          geometry.height,
+          geometry.radius,
+          containerRect.width,
+          containerRect.height,
+        ].join("|");
+        if (drawKey !== lastCanvasDrawKey) {
+          canvasRenderer.draw({
+            containerRect,
+            geometry,
+            image,
+            lens,
+            map: lastMap,
+          });
+          countGlassDraw("canvas");
+          lastCanvasDrawKey = drawKey;
+        }
       } else {
         canvasRenderer.clear();
+        lastCanvasDrawKey = "";
       }
       finishApply(applyStarted, domWrites, activeRenderer);
       return;
@@ -460,9 +535,36 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       lastMapUrl = displacementMapToPngDataUrl(lastMap);
       primitiveWrites += Number(setHref(elements.mapImage, lastMapUrl));
     }
-    const geometryWrites = updateSvgGeometry(elements, geometry, lens);
+    // Skip the ~14 attribute reads + string formatting in updateSvgGeometry
+    // when the full set of geometry/optics inputs is unchanged (the DOM
+    // setters are already value-stable; this avoids even the read pass).
+    const svgGeometryKey = [
+      key,
+      geometry.left,
+      geometry.top,
+      geometry.width,
+      geometry.height,
+      geometry.radius,
+      geometry.filterX,
+      geometry.filterY,
+      geometry.filterWidth,
+      geometry.filterHeight,
+      geometry.bleed,
+      lens.scaleX,
+      lens.scaleY,
+      lens.blur,
+      lens.chroma,
+      lens.glow,
+      lens.edge,
+    ].join("|");
+    let geometryWrites = { primitiveWrites: 0, regionWrites: 0 };
+    if (svgGeometryKey !== lastSvgGeometryKey) {
+      geometryWrites = updateSvgGeometry(elements, geometry, lens);
+      lastSvgGeometryKey = svgGeometryKey;
+    }
     primitiveWrites += geometryWrites.primitiveWrites;
     domWrites += primitiveWrites + geometryWrites.regionWrites;
+    if (primitiveWrites + geometryWrites.regionWrites > 0) countGlassDraw("svg");
 
     // Historically WebKit failed to repaint a filtered HTML element when only
     // filter *primitive* attributes mutated (the classic Safari stale-filter
@@ -564,6 +666,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
         : generateMergedDisplacementMap(mergedInput);
       lastMergedMapKey = key;
       stats.lastMapMs = performance.now() - mapStarted;
+      countMapGeneratedOutsideCache();
     }
 
     const geometry = {
@@ -599,31 +702,51 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       domWrites += Number(setStyle(inactive, "filter", ""));
     }
 
+    // Full draw-input identity for no-op apply skips: the merged map key
+    // quantizes to 1px, so the UNQUANTIZED centers are folded in to keep
+    // sub-pixel drags rendering.
+    const mergedDrawKey = [
+      key,
+      chromeCache?.key ?? "",
+      rect.width,
+      rect.height,
+      geometry.left,
+      geometry.top,
+      geometry.width,
+      geometry.height,
+      centers.map(({ cx, cy }) => `${cx},${cy}`).join(";"),
+      image ? image.currentSrc || image.src : "",
+    ].join("|");
+
     if (activeRenderer === "webgl" && webglRenderer && webglState) {
       domWrites += Number(setStyle(webglState.canvas, "display", "block"));
       domWrites += Number(setStyle(canvasRenderer.canvas, "display", "none"));
       canvasRenderer.clear();
       if (image && lastMergedMap) {
-        webglRenderer.render({
-          scene: image,
-          sceneKey: [
-            image.currentSrc || image.src,
-            image.naturalWidth,
-            image.naturalHeight,
-            Math.round(state.lens.blur * 100),
-          ].join("|"),
-          map: lastMergedMap,
-          lens: state.lens,
-          geometry,
-          maskMode: "map",
-          chrome,
-          lensRects,
-          alphaDistRange: MERGED_ALPHA_DISTANCE_RANGE,
-          sceneWidth: rect.width,
-          sceneHeight: rect.height,
-        });
+        if (`mw|${mergedDrawKey}` !== lastWebglDrawKey) {
+          webglRenderer.render({
+            scene: image,
+            sceneKey: [
+              image.currentSrc || image.src,
+              image.naturalWidth,
+              image.naturalHeight,
+              Math.round(state.lens.blur * 100),
+            ].join("|"),
+            map: lastMergedMap,
+            lens: state.lens,
+            geometry,
+            maskMode: "map",
+            chrome,
+            lensRects,
+            alphaDistRange: MERGED_ALPHA_DISTANCE_RANGE,
+            sceneWidth: rect.width,
+            sceneHeight: rect.height,
+          });
+          lastWebglDrawKey = `mw|${mergedDrawKey}`;
+        }
       } else {
         webglRenderer.clear();
+        lastWebglDrawKey = "";
       }
       finishApply(applyStarted, domWrites, activeRenderer);
       return;
@@ -632,18 +755,23 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     domWrites += Number(setStyle(canvasRenderer.canvas, "display", "block"));
     domWrites += Number(hideWebglCanvas());
     if (image && lastMergedMap) {
-      canvasRenderer.draw({
-        containerRect: rect,
-        geometry,
-        image,
-        lens: state.lens,
-        map: lastMergedMap,
-        maskMode: "map",
-        chrome,
-        lensRects,
-      });
+      if (`mc|${mergedDrawKey}` !== lastCanvasDrawKey) {
+        canvasRenderer.draw({
+          containerRect: rect,
+          geometry,
+          image,
+          lens: state.lens,
+          map: lastMergedMap,
+          maskMode: "map",
+          chrome,
+          lensRects,
+        });
+        countGlassDraw("canvas");
+        lastCanvasDrawKey = `mc|${mergedDrawKey}`;
+      }
     } else {
       canvasRenderer.clear();
+      lastCanvasDrawKey = "";
     }
     finishApply(applyStarted, domWrites, activeRenderer);
   }
@@ -767,8 +895,15 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       const canvas = document.createElement("canvas");
       styleOverlayCanvas(canvas);
       const renderer = createWebglGlassRenderer(canvas, {
-        onContextLost: () => scheduleApply(),
-        onContextRestored: () => scheduleApply(),
+        onContextLost: () => {
+          lastWebglDrawKey = "";
+          scheduleApply();
+        },
+        onContextRestored: () => {
+          // The draw key must not skip the first post-restore render.
+          lastWebglDrawKey = "";
+          scheduleApply();
+        },
       });
       if (renderer) state.container.append(canvas);
       webglState = { canvas, renderer };

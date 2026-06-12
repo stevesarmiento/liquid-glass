@@ -13,6 +13,7 @@ import {
 } from "liquid-glass";
 import { FloatingControls } from "./components/FloatingControls";
 import { GlassPreviewModal } from "./components/GlassPreviewModal";
+import { PerfOverlay } from "./components/PerfOverlay";
 import { PlaygroundStage } from "./components/PlaygroundStage";
 import { SceneSwitcher } from "./components/SceneSwitcher";
 import { useFloatingControls } from "./hooks/useFloatingControls";
@@ -38,7 +39,7 @@ export default function App() {
   const [lens, setLens] = useState<ResolvedLensParams>(INITIAL_LENS);
   const [dualLens, setDualLens] = useState(false);
   const [blend, setBlend] = useState(INITIAL_BLEND);
-  const [dropdownGap, setDropdownGap] = useState(10);
+  const [dropdownGap, setDropdownGap] = useState(0);
   const [engineMode, setEngineMode] = useState<LiquidGlassEngineMode>("auto");
   const [tintMode, setTintMode] = useState<TintMode>("custom");
   const [tintName, setTintName] = useState<GlassTintName>("clear");
@@ -61,7 +62,12 @@ export default function App() {
       : PAINTING_URL;
   const engine = useMemo(() => createLiquidGlassEngine({ mode: engineMode }), [engineMode]);
   const glassTint = tintMode === "preset" ? tintName : customTint;
-  const tint = tintMode === "preset" ? resolveGlassTint(tintName) : createGlassTint(customTint);
+  // Memoized: a fresh tint object every render would bust PlaygroundStage's
+  // memo and cascade full glass repaints into every lens on the stage.
+  const tint = useMemo(
+    () => (tintMode === "preset" ? resolveGlassTint(tintName) : createGlassTint(customTint)),
+    [customTint, tintMode, tintName],
+  );
   const {
     controlsOpen,
     controlsPanelOpensUp,
@@ -206,6 +212,8 @@ export default function App() {
         tintName={tintName}
         visibility={visibility}
       />
+
+      <PerfOverlay />
     </main>
   );
 }

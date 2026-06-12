@@ -270,7 +270,7 @@ function LensesSection({
         {showDropdownGap && (
           <label>
             <span>
-              dropdown gap
+              menu inset
               <b>{Math.round(dropdownGap)}</b>
             </span>
             <input

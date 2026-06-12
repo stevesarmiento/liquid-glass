@@ -70,16 +70,14 @@ export const ButtonRoot = styled.button<{
     cursor: progress;
   }
 
-  /* Hover feedback lives in the glass material itself (denser, more saturated
-     tint passed to GlassNode) — no CSS filter here. */
+  /* No hover treatment by design — press is the only state cue. */
 
-  @media (prefers-reduced-motion: no-preference) {
-    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-
-    &:active:not(:disabled):not([aria-busy="true"]) {
-      transform: scale(0.98);
-    }
-  }
+  /* Press scale: the WHOLE button (glass + label) grows with the press tween.
+     The component writes --lgds-button-press-scale inline per tween frame
+     (rAF-eased), so there is deliberately no CSS transition here — it would
+     fight the tween. scale(1) at rest is a no-op. */
+  transform: scale(var(--lgds-button-press-scale, 1));
+  transform-origin: center;
 `;
 
 export const Label = styled.span`
@@ -187,10 +185,10 @@ export const buttonGlobalCss = `
     -webkit-backdrop-filter: blur(var(--lg-glass-surface-blur)) saturate(var(--lg-glass-saturation));
   }
 
-  /* Fluid state transitions: hover swaps the tint (background-color layer,
-     border, saturation) on the surface — interpolate instead of snapping.
-     The highlight gradient layer keeps identical stops across states, so only
-     animatable properties change. */
+  /* Fluid state transitions: the press saturation surge swaps tint values
+     (background-color layer, border, saturation) on the surface —
+     interpolate instead of snapping. The highlight gradient layer keeps
+     identical stops across states, so only animatable properties change. */
   @media (prefers-reduced-motion: no-preference) {
     .${glassSurfaceClassName}.lg-glass-surface {
       transition:

@@ -2,6 +2,14 @@ import type { LensParams } from "liquid-glass";
 
 export type GlassComponentSize = "sm" | "md" | "lg" | "xl";
 
+/**
+ * Preset lens optics deliberately omit `mapSize`: GlassNode derives it from
+ * the lens size in device pixels (`autoMapSize`), so small controls get
+ * proportionally small, cheap, cache-friendly displacement maps. Pass an
+ * explicit `mapSize` through a component's `glassLens` override to pin it.
+ */
+export type GlassPresetLens = Omit<LensParams, "mapSize"> & { mapSize?: number };
+
 export type GlassSliderSizePreset = {
   sliderWidth: number;
   controlHeight: number;
@@ -15,7 +23,7 @@ export type GlassSwitchSizePreset = {
   trackHeight: number;
   trackInsetX: number;
   thumbInsetX: number;
-  lens: LensParams;
+  lens: GlassPresetLens;
 };
 
 export type GlassButtonSizePreset = {
@@ -23,7 +31,7 @@ export type GlassButtonSizePreset = {
   paddingX: number;
   fontSize: number;
   radius: number;
-  lens: LensParams;
+  lens: GlassPresetLens;
 };
 
 export const GLASS_SLIDER_SIZE_PRESETS: Record<GlassComponentSize, GlassSliderSizePreset> = {
@@ -80,7 +88,6 @@ export const GLASS_BUTTON_SIZE_PRESETS: Record<GlassComponentSize, GlassButtonSi
       glow: 1,
       edge: 1,
       blur: 2,
-      mapSize: 512,
     },
   },
   md: {
@@ -101,7 +108,6 @@ export const GLASS_BUTTON_SIZE_PRESETS: Record<GlassComponentSize, GlassButtonSi
       glow: 1,
       edge: 1,
       blur: 2,
-      mapSize: 512,
     },
   },
   lg: {
@@ -122,7 +128,6 @@ export const GLASS_BUTTON_SIZE_PRESETS: Record<GlassComponentSize, GlassButtonSi
       glow: 1,
       edge: 1,
       blur: 2,
-      mapSize: 512,
     },
   },
   xl: {
@@ -143,7 +148,6 @@ export const GLASS_BUTTON_SIZE_PRESETS: Record<GlassComponentSize, GlassButtonSi
       glow: 1,
       edge: 1,
       blur: 2,
-      mapSize: 512,
     },
   },
 };
@@ -168,7 +172,6 @@ export const GLASS_SWITCH_SIZE_PRESETS: Record<GlassComponentSize, GlassSwitchSi
       glow: 1,
       edge: 1,
       blur: 2,
-      mapSize: 512,
     },
   },
   md: {
@@ -190,7 +193,6 @@ export const GLASS_SWITCH_SIZE_PRESETS: Record<GlassComponentSize, GlassSwitchSi
       glow: 1,
       edge: 1,
       blur: 2,
-      mapSize: 512,
     },
   },
   lg: {
@@ -212,7 +214,6 @@ export const GLASS_SWITCH_SIZE_PRESETS: Record<GlassComponentSize, GlassSwitchSi
       glow: 1,
       edge: 1,
       blur: 2,
-      mapSize: 512,
     },
   },
   xl: {
@@ -234,7 +235,6 @@ export const GLASS_SWITCH_SIZE_PRESETS: Record<GlassComponentSize, GlassSwitchSi
       glow: 1,
       edge: 1,
       blur: 2,
-      mapSize: 512,
     },
   },
 };

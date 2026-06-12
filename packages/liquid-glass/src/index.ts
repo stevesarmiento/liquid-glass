@@ -1,5 +1,41 @@
-export { DEFAULT_LENS_PARAMS, normalizeLensParams } from "./engine/defaults";
+export { DEFAULT_LENS_PARAMS, autoMapSize, normalizeLensParams } from "./engine/defaults";
 export { createLiquidGlassEngine, getSharedLiquidGlassEngine } from "./engine/create-engine";
+export {
+  clearDisplacementMapCache,
+  configureDisplacementMapCache,
+  displacementMapCacheKey,
+  getCachedDisplacementMap,
+  getDisplacementMapCacheStats,
+  type DisplacementMapCacheOptions,
+  type DisplacementMapCacheStats,
+} from "./engine/map-cache";
+export {
+  clearMapUrlCache,
+  getCachedDisplacementMapPngUrl,
+  getMapUrlCacheStats,
+  type MapUrlCacheStats,
+} from "./web/map-url-cache";
+export {
+  countMapGeneratedOutsideCache,
+  getGlassPerfSnapshot,
+  resetGlassPerfCounters,
+  type GlassDrawBackend,
+  type GlassPerfSnapshot,
+} from "./web/perf-stats";
+export {
+  createRenderGate,
+  type RenderGate,
+  type RenderGateOptions,
+} from "./web/render-gate";
+export {
+  createGlassQualityGovernor,
+  getGlassQualityLevel,
+  resetGlassQualityForTests,
+  setGlassQualityOverride,
+  subscribeGlassQuality,
+  type GlassQualityGovernorOptions,
+  type GlassQualityLevel,
+} from "./web/quality";
 export {
   colorMatrixForScale,
   colorMatrixStringForScale,
@@ -73,7 +109,22 @@ export {
   type WebglGlassSceneSource,
   type WebglGlassViewport,
 } from "./web/webgl-renderer";
-export { renderLocalGlassWebgl, type LocalGlassWebglRenderInput } from "./web/webgl-local";
+export {
+  buildLocalGlassDrawInput,
+  renderLocalGlassWebgl,
+  type LocalGlassDrawBuild,
+  type LocalGlassDrawSpec,
+  type LocalGlassWebglRenderInput,
+} from "./web/webgl-local";
+export {
+  createGlassCompositor,
+  getSharedGlassCompositor,
+  resetSharedGlassCompositorForTests,
+  type CreateGlassCompositorOptions,
+  type GlassCompositor,
+  type GlassCompositorInstance,
+  type GlassCompositorTarget,
+} from "./web/glass-compositor";
 export {
   boxMatchedSigma,
   gaussianBlurKernel,

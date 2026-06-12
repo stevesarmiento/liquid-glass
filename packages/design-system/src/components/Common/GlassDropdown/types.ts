@@ -51,7 +51,7 @@ export interface GlassDropdownProps {
   menuWidth?: number;
   /** Horizontal alignment of the menu against the trigger. Defaults to "bottom-start". */
   placement?: GlassDropdownPlacement;
-  /** Gap between the trigger and the open menu, in px. Defaults to 10. */
+  /** Top inset of the open menu over the trigger, in px. Defaults to 0 (menu replaces the button). */
   gap?: number;
   /** Smooth-union (goo) blend distance in px. Defaults to 36. */
   blend?: number;

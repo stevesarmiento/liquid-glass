@@ -13,27 +13,26 @@ import {
 } from "react";
 import {
   MERGED_ALPHA_DISTANCE_RANGE,
-  createWebglGlassRenderer,
   generateMergedDisplacementMap,
+  getSharedGlassCompositor,
   getSharedLiquidGlassEngine,
   mergedMapKey,
   normalizeLensParams,
   parseCssColor,
   resolveGlassTint,
   type DisplacementMap,
+  type GlassCompositorInstance,
   type GlassTint,
   type LensParams,
   type MergedLensShape,
   type MergedMapInput,
   type ResolvedLensParams,
-  type WebglGlassChrome,
-  type WebglGlassRenderer
+  type WebglGlassChrome
 } from "liquid-glass";
 import {
   createSpring,
   isGlassActivationKey,
   useGlassGrab,
-  useGlassHoverTint,
   useGlassPress,
   type GlassPress,
   type Spring
@@ -63,6 +62,8 @@ import useGlassTheme from "../../../hooks/useGlassTheme";
 const REGION_MARGIN = MERGED_ALPHA_DISTANCE_RANGE;
 /** Open-menu corner radius the menu lens settles into. */
 const MENU_RADIUS = 18;
+/** Default open menu inset from the trigger's top edge. */
+const MENU_INSET = 0;
 /** Collapsed menu-lens size as a fraction of the trigger diameter. */
 const COLLAPSED_LENS_FRACTION = 0.6;
 /** Open progress at which the menu items start their staggered reveal. */
@@ -83,19 +84,19 @@ const CLOSE_HIDE_MS = 280;
  * canvas — that would be double glass), so the same material APIs are wired
  * straight into the goo's draw inputs instead.
  */
-/** Post-release hold before the pressed cue relaxes, in ms. */
-const ACTIVE_RELEASE_MS = 320;
+/**
+ * Press feel (matches GlassButton): near-instant ~90ms attack, a brief
+ * post-release hold, then a ~300ms relaxation — responsive in, soft out.
+ */
+const ACTIVE_RELEASE_MS = 150;
 /** Press tween attack/release durations, in ms. */
-const PRESS_TWEEN_IN_MS = 150;
-const PRESS_TWEEN_OUT_MS = 260;
+const PRESS_TWEEN_IN_MS = 90;
+const PRESS_TWEEN_OUT_MS = 300;
 /** Pressed-optics boost: lens scale ×1.15 and +0.45 glow at full press. */
 const PRESSED_OPTICS_SCALE = 1.15;
 const PRESSED_GLOW_BOOST = 0.45;
 const MAX_GLOW = 2;
-/** Hover = denser, more saturated tint expressed in the glass chrome. */
-const HOVER_TINT_OPACITY_BOOST = 0.06;
-const HOVER_SATURATION_SCALE = 1.4;
-/** Extra chrome saturation at full press, layered on the hover/rest tint. */
+/** Extra chrome saturation at full press, layered on the resting tint. */
 const PRESS_SATURATION_BOOST = 0.9;
 const MAX_SATURATION = 3;
 /**
@@ -110,43 +111,34 @@ const MAX_SATURATION = 3;
  * grade (the overexposure look GlassButton's DOM layer gives) — but still
  * rendered in the glass, so both morph with the trigger.
  */
-const PRESS_ILLUMINATION: Record<
-  "natural" | "additive",
-  { brightness: number; light: number }
-> = {
-  natural: { brightness: 0.1, light: 0.3 },
-  additive: { brightness: 0.26, light: 0.5 }
+const PRESS_ILLUMINATION: Record<"natural" | "additive", { brightness: number }> = {
+  natural: { brightness: 0.14 },
+  // Deliberately hot, matching GlassButton's overexposure bloom — light
+  // blowing out through the glass at full press. (Uniform only: the old
+  // pointer-anchored light was removed — a cursor-following glow reads as a
+  // hover effect, and press is the only state cue.)
+  additive: { brightness: 0.55 }
 };
-const PRESS_LIGHT_RADIUS_PX = 110;
 /**
- * Press squish, expressed in the merged map itself: at full press the trigger
- * lens (L0) compresses vertically ~2.5% with a +1% width gain for volume.
- * This replaces GlassButton's DOM-transform squish — the refraction itself
- * squashes, the icon (content ON the glass) stays put above it.
+ * Press deformation, expressed in the merged map itself: uniform GROWTH
+ * (matching GlassButton's press scale-up) — the material rises toward the
+ * finger instead of compressing. No anisotropic squish.
  */
-const PRESS_SQUISH_Y = 0.025;
-const PRESS_SQUISH_X = 0.01;
-/**
- * Hover chrome cross-fade spring. The chrome is shader uniforms (no CSS
- * transition possible), so a near-critically-damped spring (~250ms feel,
- * critical damping for k=170 is ≈26.1) interpolates the parsed chrome floats
- * per frame instead. Reduced motion jumps.
- */
-const HOVER_SPRING = { stiffness: 170, damping: 26 };
+const PRESS_SQUISH_Y = 0;
+const PRESS_SQUISH_X = 0;
 /** Press cue on the trigger icon (content on glass — the goo face is below).
- * Same 0.98 active scale GlassButton applies, but driven by the press tween
+ * Same 1.1 press growth GlassButton applies, driven by the press tween
  * (works for keyboard presses too) and applied to the icon span ONLY — the
- * canvas-painted glass face must not DOM-scale; it dips in the map instead
+ * canvas-painted glass face must not DOM-scale; it grows in the map instead
  * (PRESS_FACE_SCALE below). */
-const PRESS_ICON_SCALE = 0.98;
+const PRESS_ICON_SCALE = 1.1;
 /**
- * GlassButton's root :active scale(0.98) compresses the ENTIRE glass face,
- * lens included. The trigger's face is canvas-painted, so the same dip is
- * expressed in the merged map: L0 shrinks uniformly along the press tween,
- * with the anisotropic squish composing on top. Without this the glass reads
- * rigid under the finger — only the icon moved.
+ * GlassButton's press scales the ENTIRE glass face up 10%, lens included.
+ * The trigger's face is canvas-painted, so the same growth is expressed in
+ * the merged map: L0 grows uniformly along the press tween. Without this the
+ * glass would read rigid under the finger — only the icon would move.
  */
-const PRESS_FACE_SCALE = 0.98;
+const PRESS_FACE_SCALE = 1.1;
 /**
  * Grab-the-material on the OPEN menu: press-and-drag does not move the menu,
  * it elastically deforms the actual lens. The rubberbanded deflection from
@@ -257,34 +249,6 @@ function rotateDir(dir: [number, number], degrees: number): [number, number] {
   return [dir[0] * cos - dir[1] * sin, dir[0] * sin + dir[1] * cos];
 }
 
-/**
- * Lerps the hover-affected chrome uniforms between the resting and hover
- * chromes at hover progress `t`. useGlassHoverTint only densifies the tint
- * fill and scales the backdrop saturation, so those are the only fields that
- * differ — they are interpolated as PARSED floats (tint RGBA + saturation);
- * everything else comes from `rest`. Chrome rides the render pass only: it is
- * deliberately NOT part of the merged-map cache key, so a hover tween redraws
- * with the cached map and never regenerates it.
- */
-function blendChrome(
-  rest: WebglGlassChrome,
-  hover: WebglGlassChrome,
-  t: number
-): WebglGlassChrome {
-  if (t <= 0) return rest;
-  if (t >= 1) return hover;
-  return {
-    ...rest,
-    tint: [
-      lerp(rest.tint[0], hover.tint[0], t),
-      lerp(rest.tint[1], hover.tint[1], t),
-      lerp(rest.tint[2], hover.tint[2], t),
-      lerp(rest.tint[3], hover.tint[3], t)
-    ],
-    saturation: lerp(rest.saturation ?? 1, hover.saturation ?? 1, t)
-  };
-}
-
 /** Backdrop images are cached per URL so N dropdowns share one decode. */
 const backdropImageCache = new Map<string, HTMLImageElement>();
 
@@ -322,7 +286,7 @@ function computeLayout(
   triggerSize: number,
   menuWidth: number,
   menuHeight: number,
-  gap: number,
+  inset: number,
   placement: GlassDropdownPlacement
 ): DropdownLayout {
   const menuLeft =
@@ -331,7 +295,7 @@ function computeLayout(
       : placement === "bottom-end"
         ? triggerSize - menuWidth
         : 0;
-  const menuTop = triggerSize + gap;
+  const menuTop = inset;
   const left = Math.min(0, menuLeft) - REGION_MARGIN;
   const top = -REGION_MARGIN;
   const right = Math.max(triggerSize, menuLeft + menuWidth) + REGION_MARGIN;
@@ -356,9 +320,9 @@ function computeLayout(
  * animated by open progress p. At p=0 the menu lens sits fully inside the
  * trigger circle, where the merged generator's overlap-aware blend
  * attenuation collapses the smooth-min to a clean union — the blob IS the
- * circle. As p grows the lens pulls away and the attenuation releases the
- * full blend, so a liquid neck forms, then settles into one connected blob
- * (trigger + menu bridged across the gap) at p=1.
+ * circle. As p grows the lens drops into the open menu rect, which overlaps
+ * the trigger so the settled menu visually absorbs/replaces the button
+ * instead of leaving a separate trigger bubble above it.
  *
  * `pressProgress` squishes L0 in the map itself (height −2.5%, width +1% at
  * full press, radius pinned to the squashed height so the lens stays a
@@ -384,8 +348,8 @@ function lensesAt(
   triggerGrabDy: number
 ): MergedLensShape[] {
   const collapsed = triggerSize * COLLAPSED_LENS_FRACTION;
-  // Uniform press dip (GlassButton's :active scale) first, then the
-  // anisotropic squish on top of the dipped size.
+  // Uniform press growth (GlassButton's press scale-up) along the tween;
+  // PRESS_FACE_SCALE > 1 makes (1 - (1 - s) * p) an expansion.
   const pressedSize = triggerSize * (1 - (1 - PRESS_FACE_SCALE) * pressProgress);
   const squishedHeight = pressedSize * (1 - PRESS_SQUISH_Y * pressProgress);
   const triggerWidth =
@@ -426,7 +390,8 @@ const DefaultTriggerIcon = () => (
 
 /** Per-instance imperative goo machinery — never touches React state. */
 interface GooState {
-  renderer: WebglGlassRenderer | null;
+  /** Shared-compositor registration for the goo canvas. */
+  renderer: GlassCompositorInstance | null;
   scene: HTMLCanvasElement | null;
   sceneKey: string;
   sceneScale: number;
@@ -436,10 +401,6 @@ interface GooState {
   itemsShown: boolean;
   mapKey: string | null;
   map: DisplacementMap | null;
-  /** Hover chrome cross-fade (0 = resting tint, 1 = hover tint). */
-  hoverSpring: Spring;
-  hoverRaf: number | null;
-  hoverLastTime: number | null;
   /** Rubberbanded grab deflection (px), fed by useGlassGrab's onDeflection. */
   grabDx: number;
   grabDy: number;
@@ -447,8 +408,6 @@ interface GooState {
   triggerGrabDx: number;
   triggerGrabDy: number;
   /** Last pointer position in region px (null until the pointer visits). */
-  pointerX: number | null;
-  pointerY: number | null;
 }
 
 /** Everything drawFrame needs, refreshed every render (latest-ref pattern). */
@@ -457,8 +416,6 @@ interface DrawInput {
   optics: ResolvedLensParams;
   /** Chrome derived from the resting tint. */
   restingChrome: WebglGlassChrome;
-  /** Chrome derived from the hover tint (denser fill, boosted saturation). */
-  hoverChrome: WebglGlassChrome;
   blend: number;
   triggerSize: number;
   /** Tweened 0..1 press progress from useGlassPress. */
@@ -476,7 +433,7 @@ const GlassDropdown = ({
   className,
   defaultOpen = false,
   engineMode = "auto",
-  gap = 10,
+  gap = MENU_INSET,
   glassBackdrop,
   glassLens,
   glassTint,
@@ -519,15 +476,9 @@ const GlassDropdown = ({
   const gooActive = wantsGoo && !gooUnavailable;
 
   const resolvedTint = useMemo(() => resolveGlassTint(glassTint ?? "frost"), [glassTint]);
-  // Hover comes from the glass itself (same numbers as GlassButton): a
-  // slightly denser, more saturated tint. The goo chrome derives from BOTH
-  // tints; drawFrame cross-fades the parsed floats with the hover spring.
-  const { restingTint, hoverTint } = useGlassHoverTint(resolvedTint, {
-    opacityBoost: HOVER_TINT_OPACITY_BOOST,
-    saturationScale: HOVER_SATURATION_SCALE
-  });
-  const restingChrome = useMemo(() => chromeForTint(restingTint), [restingTint]);
-  const hoverChrome = useMemo(() => chromeForTint(hoverTint), [hoverTint]);
+  // No hover treatment by design (matches GlassButton): the glass rests
+  // until pressed.
+  const restingChrome = useMemo(() => chromeForTint(resolvedTint), [resolvedTint]);
   const optics = useMemo(
     () => normalizeLensParams({ ...DEFAULT_DROPDOWN_OPTICS, ...glassLens }),
     [glassLens]
@@ -549,7 +500,6 @@ const GlassDropdown = ({
     tweenOutMs: PRESS_TWEEN_OUT_MS
   });
   const pressProgress = press.progress;
-  const [isHovered, setIsHovered] = useState(false);
 
   const gooRef = useRef<GooState | null>(null);
   if (gooRef.current === null) {
@@ -564,15 +514,10 @@ const GlassDropdown = ({
       itemsShown: false,
       mapKey: null,
       map: null,
-      hoverSpring: createSpring(HOVER_SPRING),
-      hoverRaf: null,
-      hoverLastTime: null,
       grabDx: 0,
       grabDy: 0,
       triggerGrabDx: 0,
       triggerGrabDy: 0,
-      pointerX: null,
-      pointerY: null
     };
     gooRef.current.spring.position = isOpen ? 1 : 0;
     gooRef.current.spring.target = isOpen ? 1 : 0;
@@ -583,7 +528,6 @@ const GlassDropdown = ({
     layout,
     optics,
     restingChrome,
-    hoverChrome,
     blend,
     triggerSize,
     pressProgress,
@@ -698,11 +642,9 @@ const GlassDropdown = ({
       goo.mapKey = key;
     }
 
-    // Chrome is render-pass uniforms only (never in the map key): the hover
-    // spring cross-fades the parsed tint/saturation floats, then the press
+    // Chrome is render-pass uniforms only (never in the map key): the press
     // saturation surge rides the same tween as the optics boost and bloom.
-    const hoverP = clamp(goo.hoverSpring.position, 0, 1);
-    let chrome = blendChrome(input.restingChrome, input.hoverChrome, hoverP);
+    let chrome = input.restingChrome;
     if (pressP > 0) {
       chrome = {
         ...chrome,
@@ -711,24 +653,17 @@ const GlassDropdown = ({
           (chrome.saturation ?? 1) * (1 + PRESS_SATURATION_BOOST * pressP)
         ),
         // Press illumination in the glass itself: the whole blob brightens
-        // ("the light turns on") and a pointer-anchored interior light makes
-        // the material aware of where the source is. Both ride the press
-        // tween and are clipped by the blob SDF, so they morph with the
-        // squished/grabbed trigger — unlike a DOM overlay. Keyboard presses
-        // (no pointer yet) anchor the light at the trigger lens center.
+        // uniformly ("the light turns on"), clipped by the blob SDF so it
+        // morphs with the deformed trigger — unlike a DOM overlay.
         // pressHighlight only changes the grade: additive = the hot,
-        // bloom-like values; natural = the subtler material response.
-        innerBrightness: PRESS_ILLUMINATION[input.pressHighlight].brightness * pressP,
-        innerLight: [1, 1, 1, PRESS_ILLUMINATION[input.pressHighlight].light * pressP],
-        innerLightPos: [
-          goo.pointerX ?? lenses[0].x,
-          goo.pointerY ?? lenses[0].y
-        ],
-        innerLightRadius: PRESS_LIGHT_RADIUS_PX
+        // bloom-like value; natural = the subtler material response.
+        // Deliberately NO pointer-anchored light: a cursor-following glow
+        // reads as a hover effect, and press is the only state cue.
+        innerBrightness: PRESS_ILLUMINATION[input.pressHighlight].brightness * pressP
       };
     }
 
-    goo.renderer.render({
+    goo.renderer.update({
       scene: goo.scene,
       sceneKey: goo.sceneKey,
       map: goo.map,
@@ -765,6 +700,11 @@ const GlassDropdown = ({
     goo.lastTime = null;
   }, []);
 
+  // Open-morph animation loop: one rAF, one draw per tick; self-stops once
+  // the spring settles. (The hover chrome cross-fade was removed by design —
+  // press is the only state cue, matching GlassButton.)
+  const OPEN_SETTLE_EPSILON = 0.002;
+
   const startLoop = useCallback(() => {
     const goo = gooRef.current!;
     if (goo.raf !== null) return;
@@ -781,7 +721,7 @@ const GlassDropdown = ({
         goo.itemsShown = true;
         menuRef.current?.setAttribute("data-open", "true");
       }
-      if (goo.spring.isSettled(0.001)) {
+      if (goo.spring.isSettled(OPEN_SETTLE_EPSILON)) {
         goo.spring.position = goo.spring.target;
         goo.spring.velocity = 0;
         goo.lastTime = null;
@@ -792,39 +732,6 @@ const GlassDropdown = ({
       goo.raf = requestAnimationFrame(tick);
     };
     goo.raf = requestAnimationFrame(tick);
-  }, [drawFrame]);
-
-  const stopHoverLoop = useCallback(() => {
-    const goo = gooRef.current!;
-    if (goo.hoverRaf !== null) {
-      cancelAnimationFrame(goo.hoverRaf);
-      goo.hoverRaf = null;
-    }
-    goo.hoverLastTime = null;
-  }, []);
-
-  // Hover chrome tween loop, independent of the open-morph loop (hovering
-  // while the goo is settled must still animate; both running at once just
-  // means two cheap chrome-only draws of the same cached map per frame).
-  const startHoverLoop = useCallback(() => {
-    const goo = gooRef.current!;
-    if (goo.hoverRaf !== null) return;
-    const tick = (now: number) => {
-      goo.hoverRaf = null;
-      const dt = goo.hoverLastTime === null ? 16 : now - goo.hoverLastTime;
-      goo.hoverLastTime = now;
-      goo.hoverSpring.step(dt);
-      if (goo.hoverSpring.isSettled(0.001)) {
-        goo.hoverSpring.position = goo.hoverSpring.target;
-        goo.hoverSpring.velocity = 0;
-        goo.hoverLastTime = null;
-        drawFrame();
-        return;
-      }
-      drawFrame();
-      goo.hoverRaf = requestAnimationFrame(tick);
-    };
-    goo.hoverRaf = requestAnimationFrame(tick);
   }, [drawFrame]);
 
   // Grab-the-material on the open menu. The transform pipeline is off
@@ -859,20 +766,6 @@ const GlassDropdown = ({
       drawFrame();
     }
   });
-
-  /**
-   * Tracks the pointer in region px for the in-glass press light (the
-   * shader's innerLightPos). Imperative — rides gooRef, no React state.
-   */
-  const updateGooPointer = useCallback((event: { clientX: number; clientY: number }) => {
-    const goo = gooRef.current!;
-    const root = rootRef.current;
-    const layoutNow = drawInputRef.current.layout;
-    if (!root || !layoutNow) return;
-    const rect = root.getBoundingClientRect();
-    goo.pointerX = event.clientX - rect.left - layoutNow.region.left;
-    goo.pointerY = event.clientY - rect.top - layoutNow.region.top;
-  }, []);
 
   // Grab-the-material on the trigger — same GlassButton elasticity, expressed
   // in the goo. Unlike the menu, the trigger CAN use the hook's pointer-
@@ -993,37 +886,37 @@ const GlassDropdown = ({
 
   useEffect(() => () => endMenuGrabGesture(false), [endMenuGrabGesture]);
 
-  // Renderer lifecycle. WebGL2 unavailable (e.g. jsdom, old browsers) or a
-  // lost context downgrades to the CSS fallback; a restore re-upgrades. The
-  // canvas only mounts once the menu is measured (`hasLayout`), so that flip
-  // is a dependency.
+  // Renderer lifecycle: a registration on the page's shared glass compositor
+  // (one WebGL2 context for ALL glass, instead of a dropdown-owned context).
+  // WebGL2 unavailable (e.g. jsdom, old browsers) or a permanent compositor
+  // failure downgrades to the CSS fallback. Transient context losses are
+  // handled inside the compositor: the canvas keeps its last blitted pixels
+  // and is re-rendered automatically on restore. The canvas only mounts once
+  // the menu is measured (`hasLayout`), so that flip is a dependency.
   const hasLayout = layout !== null;
   useEffect(() => {
     if (!wantsGoo || !hasLayout) return undefined;
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
 
-    const renderer = createWebglGlassRenderer(canvas, {
-      onContextLost: () => setGooUnavailable(true),
-      onContextRestored: () => {
-        setGooUnavailable(false);
-        setGooVersion((version) => version + 1);
-      }
+    const compositor = getSharedGlassCompositor();
+    const instance = compositor?.register({
+      canvas,
+      onFallback: () => setGooUnavailable(true)
     });
-    if (!renderer) {
+    if (!instance) {
       setGooUnavailable(true);
       return undefined;
     }
-    gooRef.current!.renderer = renderer;
+    gooRef.current!.renderer = instance;
     setGooVersion((version) => version + 1);
 
     return () => {
       stopLoop();
-      stopHoverLoop();
       gooRef.current!.renderer = null;
-      renderer.destroy();
+      instance.destroy();
     };
-  }, [hasLayout, stopHoverLoop, stopLoop, wantsGoo]);
+  }, [hasLayout, stopLoop, wantsGoo]);
 
   // Backdrop decode → repaint (same module-level cache pattern as GlassButton).
   const backdropUrl = glassBackdrop?.image;
@@ -1075,23 +968,6 @@ const GlassDropdown = ({
     if (!gooActive || !layout) return;
     drawFrame();
   }, [drawFrame, gooActive, layout, pressProgress]);
-
-  // Hover retarget: tween the chrome cross-fade spring (chrome uniforms only
-  // — never a map regen). Reduced motion, or no goo to animate, jumps.
-  useEffect(() => {
-    const goo = gooRef.current!;
-    const target = isHovered ? 1 : 0;
-    if (goo.hoverSpring.target === target && goo.hoverSpring.position === target) return;
-    goo.hoverSpring.target = target;
-    if (!gooActive || prefersReducedMotion()) {
-      stopHoverLoop();
-      goo.hoverSpring.position = target;
-      goo.hoverSpring.velocity = 0;
-      if (gooActive) drawFrame();
-      return;
-    }
-    startHoverLoop();
-  }, [drawFrame, gooActive, isHovered, startHoverLoop, stopHoverLoop]);
 
   // Re-slice on viewport resize (anchor/region rects move under cover math).
   useEffect(() => {
@@ -1152,13 +1028,7 @@ const GlassDropdown = ({
     return undefined;
   }, [drawFrame, gooActive, isOpen, refreshScene, startLoop, stopLoop]);
 
-  useEffect(
-    () => () => {
-      stopLoop();
-      stopHoverLoop();
-    },
-    [stopHoverLoop, stopLoop]
-  );
+  useEffect(() => () => stopLoop(), [stopLoop]);
 
   const setOpen = useCallback(
     (next: boolean) => {
@@ -1296,7 +1166,7 @@ const GlassDropdown = ({
   const region = layout?.region;
   const menuLayoutStyle: CSSProperties = layout
     ? { left: layout.menu.left, top: layout.menu.top, width: layout.menu.width }
-    : { left: 0, top: triggerSize + gap, width: menuWidth };
+    : { left: 0, top: gap, width: menuWidth };
 
   return (
     <DropdownRoot
@@ -1308,7 +1178,9 @@ const GlassDropdown = ({
           "--lgds-dropdown-text": theme.component.buttonText,
           "--lgds-dropdown-trigger-size": `${triggerSize}px`,
           "--lgds-dropdown-menu-radius": `${MENU_RADIUS}px`,
-          "--lgds-dropdown-menu-origin": `${triggerSize / 2 - (layout?.menu.left ?? 0)}px ${-gap}px`,
+          "--lgds-dropdown-menu-origin": `${triggerSize / 2 - (layout?.menu.left ?? 0)}px ${
+            triggerSize / 2 - (layout?.menu.top ?? gap)
+          }px`,
           "--lgds-dropdown-tint-bg": resolvedTint.background,
           "--lgds-dropdown-tint-border": resolvedTint.border,
           "--lgds-dropdown-tint-shadow": resolvedTint.shadow,
@@ -1334,7 +1206,6 @@ const GlassDropdown = ({
         aria-expanded={isOpen}
         aria-haspopup="menu"
         aria-label={label}
-        data-hovered={isHovered ? "true" : undefined}
         onBlur={press.handlers.onBlur}
         onClick={handleTriggerClick}
         onKeyDown={handleTriggerKeyDown}
@@ -1353,21 +1224,11 @@ const GlassDropdown = ({
           // engaging it costs nothing until the pointer actually drags.
           triggerGrab.handlers.onPointerDown(event);
         }}
-        onPointerEnter={(event) => {
-          setIsHovered(true);
-          // The in-glass press light tracks the pointer via gooRef — no CSS
-          // vars; the illumination is shader chrome, not a DOM layer.
-          updateGooPointer(event);
-        }}
-        onPointerLeave={() => setIsHovered(false)}
         onPointerMove={(event) => {
-          updateGooPointer(event);
+          // Press illumination is uniform (no pointer-anchored light — a
+          // cursor-following glow reads as hover), so plain pointer movement
+          // never redraws chrome; the grab spring drives its own frames.
           triggerGrab.handlers.onPointerMove(event);
-          // While pressed, the in-glass light must track the pointer even
-          // when no other loop is drawing (e.g. the post-release hold, or a
-          // still press with the grab spring settled). Chrome-only redraw —
-          // the merged map stays cached unless geometry changed.
-          if (gooActive && drawInputRef.current.pressProgress > 0) drawFrame();
         }}
         onPointerUp={(event) => {
           press.handlers.onPointerUp(event);
@@ -1377,12 +1238,15 @@ const GlassDropdown = ({
         type="button"
       >
         {/* No DOM press layer: a DOM overlay stays a rigid circle while the
-            goo squishes/stretches, so BOTH press-highlight modes render in
-            the shader chrome (innerBrightness + pointer-anchored innerLight,
-            see drawFrame) and morph with the glass. */}
+            goo grows/stretches, so BOTH press-highlight modes render in the
+            shader chrome (uniform innerBrightness, see drawFrame) and morph
+            with the glass. */}
         <TriggerIcon
           aria-hidden="true"
-          style={{ transform: `scale(${1 - (1 - PRESS_ICON_SCALE) * pressProgress})` }}
+          style={{
+            opacity: menuVisible ? 0 : 1,
+            transform: `scale(${1 - (1 - PRESS_ICON_SCALE) * pressProgress})`
+          }}
         >
           {/* Grab parallax rides its own nested span: the press scale owns
               TriggerIcon's inline transform, and the spring writes here per

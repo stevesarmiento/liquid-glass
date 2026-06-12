@@ -58,6 +58,44 @@ The playground has both paths:
 - Scene Lens: the original painting demo.
 - Component Lab: a reference-style slider thumb using `GlassNode`.
 
+## Performance Architecture
+
+Glass cost scales with animated pixels, not element count. The invariants:
+
+- **One WebGL2 context per page.** `getSharedGlassCompositor()`
+  (`web/glass-compositor.ts`) owns the page's only GL context on a detached
+  canvas; every GlassNode/GlassDropdown registers a blit target and receives
+  its pixels via `drawImage` into its own visible 2D canvas (DOM stacking,
+  scroll sync, and `border-radius` clipping stay native). Context loss keeps
+  the last blitted pixels and auto-recovers on restore; repeated losses fan
+  out to the CPU canvas path. `createWebglGlassRenderer` remains available
+  standalone (the scene controller uses it).
+- **Displacement maps are globally cached.** `getCachedDisplacementMap`
+  (`engine/map-cache.ts`, byte-budget LRU keyed by `mapKey` + engine mode)
+  serves shared, immutable maps to all consumers; the SVG path adds a PNG
+  data-URL cache (`web/map-url-cache.ts`). Map textures are pooled by map
+  identity in the compositor. Component `mapSize` defaults to
+  `autoMapSize(lens, dpr)` — small controls get small maps.
+- **Repaints are keyed by content, not closure identity.** GlassNode's
+  `sourceVersion` prop decouples redraws from React render identity; it also
+  feeds the local `sceneKey` so the GPU blur and even the source draw callback
+  are skipped for unchanged content. Press tweens quantize the glow term
+  (`boostLens({ glowSteps })`) so a press touches a bounded set of cached maps
+  while scale stays continuous via uniforms.
+- **Idle is free.** Renderers draw on demand only; the controller skips
+  no-op applies via draw keys; `web/render-gate.ts` (shared
+  IntersectionObserver + visibilitychange) suspends offscreen/hidden glass and
+  repaints on re-entry.
+- **Degradation is principled.** `web/quality.ts` watches frame pacing while
+  glass work happens (idle = sampler off) and steps quality down/up with
+  hysteresis: smaller maps → no chroma separation → surface-only tint (the
+  same fallback as `prefers-reduced-transparency`). Opt out per node with
+  `adaptiveQuality={false}`.
+- **Counters are always on.** `web/perf-stats.ts` exposes draws/sec by
+  backend, map/blur cache hit rates, and live GL context counts
+  (`__LIQUID_GLASS_PERF__.snapshot()` in the console; the playground renders
+  a PerfOverlay).
+
 ## Deferred Work
 
 - Multi-lens target assignment and merged maps.

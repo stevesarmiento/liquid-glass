@@ -40,6 +40,7 @@ export {
 export {
   isGlassActivationKey,
   useGlassPress,
+  type GlassBoostableLens,
   type GlassLensBoost,
   type GlassPress,
   type GlassPressHandlers,
@@ -47,5 +48,7 @@ export {
 } from "./material/useGlassPress";
 export { glassTokens, type GlassTokens } from "./tokens";
 export { useElementSize } from "./useElementSize";
+export { useGlassQualityLevel } from "./useGlassQualityLevel";
 export { useIsSafari } from "./useIsSafari";
 export { usePrefersReducedTransparency } from "./usePrefersReducedTransparency";
+export { useRenderGate } from "./useRenderGate";

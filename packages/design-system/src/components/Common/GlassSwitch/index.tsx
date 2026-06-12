@@ -10,7 +10,7 @@ import {
   useRef,
   useState
 } from "react";
-import { type GlassCanvasSource, type LensParams } from "liquid-glass";
+import { type GlassCanvasSource } from "liquid-glass";
 import { GlassNode, useGlassDeformation, useGlassPress } from "liquid-glass/react";
 
 import {
@@ -37,6 +37,7 @@ import { drawRoundedRect, getCanvasBackgroundColor } from "../../../lib/canvas";
 import { useGlobalCssOnce } from "../../../lib/globalCss";
 import { safeReleasePointerCapture, safeSetPointerCapture } from "../../../lib/pointer";
 import useGlassTheme from "../../../hooks/useGlassTheme";
+import useCanvasSourceStyles from "../../../hooks/useCanvasSourceStyles";
 
 const ACTIVE_RELEASE_MS = 320;
 const ACTIVE_LENS_SCALE = 1.85;
@@ -111,7 +112,7 @@ const GlassSwitch = ({
   const sizePreset = GLASS_SWITCH_SIZE_PRESETS[size];
   const trackInsetX = sizePreset.trackInsetX;
   const thumbInsetX = sizePreset.thumbInsetX;
-  const lens: LensParams = {
+  const lens = {
     ...sizePreset.lens,
     ...glassLens
   };
@@ -155,12 +156,31 @@ const GlassSwitch = ({
   const lensSourceX =
     lensGeometry.lensTravelCenterX + (lensGeometry.lensX - lensGeometry.lensTravelCenterX) * 0.55;
 
+  // Style sampling hoisted out of the draw path: the switch's drawSource runs
+  // per DRAG FRAME, and getCanvasBackgroundColor walks every ancestor calling
+  // getComputedStyle each time. Sampled once per deps change instead.
+  const sourceStyles = useCanvasSourceStyles(
+    controlRef,
+    (control) => {
+      const hostStyle = getComputedStyle(control);
+      return {
+        trackColor: hostStyle.getPropertyValue("--lgds-switch-track-bg").trim() || resolvedTrackColor,
+        fillColor: hostStyle.getPropertyValue("--lgds-switch-fill-bg").trim() || resolvedFillColor,
+        sourceBackground: getCanvasBackgroundColor(control)
+      };
+    },
+    [theme, resolvedTrackColor, resolvedFillColor, controlSize.width, controlSize.height]
+  );
+
+  // Drag repaints are preserved by construction: visualRatio changes per drag
+  // frame, theme/CSS changes flow through the sampled style key.
+  const sourceVersion = `${visualRatio}|${sourceStyles.key}|${resolvedTrackHeight}|${trackInsetX}`;
+
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
-    const hostStyle = getComputedStyle(controlRef.current ?? ctx.canvas);
-    const trackColor =
-      hostStyle.getPropertyValue("--lgds-switch-track-bg").trim() || resolvedTrackColor;
-    const fillColor = hostStyle.getPropertyValue("--lgds-switch-fill-bg").trim() || resolvedFillColor;
-    const sourceBackground = getCanvasBackgroundColor(controlRef.current ?? ctx.canvas);
+    const styles = sourceStyles.get();
+    const trackColor = styles?.trackColor ?? resolvedTrackColor;
+    const fillColor = styles?.fillColor ?? resolvedFillColor;
+    const sourceBackground = styles?.sourceBackground ?? "#ffffff";
     const trackWidth = Math.max(0, metrics.sourceWidth - trackInsetX * 2);
     const trackTop = metrics.sourceHeight / 2 - resolvedTrackHeight / 2;
 
@@ -407,6 +427,7 @@ const GlassSwitch = ({
                   contentClassName={glassContentClassName}
                   drawSource={drawSource}
                   engineMode={engineMode}
+                  sourceVersion={sourceVersion}
                   lens={{ ...lens, width: renderedLensWidth, height: renderedLensHeight }}
                   lensX={lensSourceX - (renderedLensWidth - lens.width) / 2}
                   lensY={renderedLensY}

@@ -55,12 +55,9 @@ export const TriggerButton = styled.button<{ $fallback: boolean }>`
       -webkit-backdrop-filter: blur(10px) saturate(var(--lgds-dropdown-saturation));
       box-shadow: 0 10px 28px var(--lgds-dropdown-tint-shadow);
 
-      /* No goo to express hover/press in, so the fallback face gets simple
-         density feedback (the goo path does this in the glass chrome). */
-      &:hover {
-        background: color-mix(in srgb, var(--lgds-dropdown-tint-bg), rgb(255 255 255 / 60%) 10%);
-      }
-
+      /* No goo to express press in, so the fallback face gets simple density
+         feedback (the goo path does this in the glass chrome). No hover
+         treatment by design — press is the only state cue. */
       &:active {
         background: color-mix(in srgb, var(--lgds-dropdown-tint-bg), rgb(255 255 255 / 70%) 18%);
       }
@@ -90,7 +87,9 @@ export const TriggerIcon = styled.span`
   pointer-events: none;
 
   @media (prefers-reduced-motion: no-preference) {
-    transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+    transition:
+      opacity 120ms ease,
+      transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
 
   svg {
@@ -112,7 +111,7 @@ export const TriggerIconInner = styled.span`
 
 export const Menu = styled.div<{ $fallback: boolean; $interactive: boolean; $visible: boolean }>`
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   box-sizing: border-box;
   padding: 8px;
   overflow: hidden;
@@ -188,14 +187,16 @@ export const MenuItem = styled.button`
     }
   }
 
-  &:hover:not([aria-disabled="true"]),
-  &:focus-visible {
-    background: rgba(255, 255, 255, 0.16);
-  }
-
+  /* No mouse-over highlight by design. Keyboard focus uses an outline only;
+     the filled highlight is reserved for the active/pressed state. */
   &:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--lgds-dropdown-accent) 62%, white);
     outline-offset: -2px;
+  }
+
+  /* Pressing an item still flashes it — confirmation, not hover. */
+  &:active:not([aria-disabled="true"]) {
+    background: rgba(255, 255, 255, 0.16);
   }
 
   &[aria-disabled="true"] {

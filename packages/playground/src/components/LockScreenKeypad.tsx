@@ -1,4 +1,13 @@
-import { memo, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { GlassButton, type GlassPressHighlight } from "@liquid-glass/design-system";
 import type {
   GlassTintInput,
@@ -29,6 +38,74 @@ const KEY_SIZE = 75;
 /** Holds the shake long enough for the animation to finish before clearing. */
 const WRONG_RESET_MS = 700;
 const UNLOCK_RESET_MS = 2200;
+
+/**
+ * The lock screen sits on the draggable lens surface; keep key presses from
+ * grabbing the stage lens underneath. Module-level so the handler identity is
+ * stable across renders (KeypadKey is memoized on its props).
+ */
+const stopPointerPropagation = (event: ReactPointerEvent<HTMLElement>) => event.stopPropagation();
+
+interface KeypadKeyProps {
+  backgroundUrl: string;
+  containerRef: RefObject<HTMLDivElement | null>;
+  digit: string;
+  disabled: boolean;
+  engineMode: LiquidGlassEngineMode;
+  glassTint: GlassTintName | GlassTintInput;
+  keyLens: Partial<LensParams>;
+  letters?: string;
+  onDigit: (digit: string) => void;
+  pressHighlight: GlassPressHighlight;
+  renderer: LiquidGlassRenderer;
+}
+
+/**
+ * One keypad key, memoized so keypad-local state churn (entered digits,
+ * status) re-renders only the dots/footer — not all ten glass buttons.
+ * Backdrop-driven buttons keep legacy identity-keyed repaints (the cover
+ * slice tracks live layout), so every avoided re-render is an avoided full
+ * lens repaint.
+ */
+const KeypadKey = memo(function KeypadKey({
+  backgroundUrl,
+  containerRef,
+  digit,
+  disabled,
+  engineMode,
+  glassTint,
+  keyLens,
+  letters,
+  onDigit,
+  pressHighlight,
+  renderer,
+}: KeypadKeyProps) {
+  const handleClick = useCallback(() => onDigit(digit), [digit, onDigit]);
+
+  return (
+    <GlassButton
+      aria-label={letters ? `${digit} ${letters}` : digit}
+      className={digit === "0" ? "lockKey lockKeyZero" : "lockKey"}
+      disabled={disabled}
+      engineMode={engineMode}
+      glassBackdrop={{ image: backgroundUrl, anchor: containerRef }}
+      glassLens={keyLens}
+      glassSurfaceBlur={0}
+      glassTint={glassTint}
+      onClick={handleClick}
+      onPointerDown={stopPointerPropagation}
+      onPointerMove={stopPointerPropagation}
+      pressHighlight={pressHighlight}
+      renderer={renderer}
+      variant="ghost"
+    >
+      <span className="lockKeyContent">
+        <span className="lockKeyDigit">{digit}</span>
+        {letters && <span className="lockKeyLetters">{letters}</span>}
+      </span>
+    </GlassButton>
+  );
+});
 
 export const LockScreenKeypad = memo(function LockScreenKeypad({
   backgroundUrl,
@@ -83,17 +160,25 @@ export const LockScreenKeypad = memo(function LockScreenKeypad({
     setStatus(nextStatus);
   }
 
-  function handleDigit(digit: string) {
-    if (status !== "idle") return;
-    const next = entered + digit;
+  // Stable identity (state read through refs) so memoized keys never
+  // re-render from keypad-local state churn.
+  const stateRef = useRef({ entered, status });
+  stateRef.current = { entered, status };
+  const scheduleResetRef = useRef(scheduleReset);
+  scheduleResetRef.current = scheduleReset;
+
+  const handleDigit = useCallback((digit: string) => {
+    const { entered: current, status: currentStatus } = stateRef.current;
+    if (currentStatus !== "idle") return;
+    const next = current + digit;
     setEntered(next);
     if (next.length < PASSCODE.length) return;
     if (next === PASSCODE) {
-      scheduleReset("unlocked", UNLOCK_RESET_MS);
+      scheduleResetRef.current("unlocked", UNLOCK_RESET_MS);
     } else {
-      scheduleReset("wrong", WRONG_RESET_MS);
+      scheduleResetRef.current("wrong", WRONG_RESET_MS);
     }
-  }
+  }, []);
 
   function handleDelete() {
     if (status !== "idle") return;
@@ -122,30 +207,20 @@ export const LockScreenKeypad = memo(function LockScreenKeypad({
       </div>
       <div className="lockKeypad">
         {KEYPAD_KEYS.map(({ digit, letters }) => (
-          <GlassButton
-            aria-label={letters ? `${digit} ${letters}` : digit}
-            className={digit === "0" ? "lockKey lockKeyZero" : "lockKey"}
+          <KeypadKey
+            backgroundUrl={backgroundUrl}
+            containerRef={containerRef}
+            digit={digit}
             disabled={unlocked}
             engineMode={engineMode}
-            glassBackdrop={{ image: backgroundUrl, anchor: containerRef }}
-            glassLens={keyLens}
-            glassSurfaceBlur={0}
             glassTint={glassTint}
             key={digit}
-            onClick={() => handleDigit(digit)}
-            // The lock screen sits on the draggable lens surface; keep key
-            // presses from grabbing the stage lens underneath.
-            onPointerDown={(event) => event.stopPropagation()}
-            onPointerMove={(event) => event.stopPropagation()}
+            keyLens={keyLens}
+            letters={letters}
+            onDigit={handleDigit}
             pressHighlight={pressHighlight}
             renderer={renderer}
-            variant="ghost"
-          >
-            <span className="lockKeyContent">
-              <span className="lockKeyDigit">{digit}</span>
-              {letters && <span className="lockKeyLetters">{letters}</span>}
-            </span>
-          </GlassButton>
+          />
         ))}
       </div>
       <div className="lockFooter">

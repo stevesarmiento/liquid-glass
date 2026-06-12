@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetSharedGlassCompositorForTests } from "../web/glass-compositor";
+import { createStubGl } from "../web/test-stub-gl";
 import { GlassNode } from "./GlassNode";
 import { GlassSurface } from "./GlassSurface";
 import { ensureLiquidGlassStyles } from "./inject-styles";
@@ -50,6 +52,7 @@ describe("glass React primitives", () => {
   });
 
   afterEach(() => {
+    resetSharedGlassCompositorForTests();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     document.body.innerHTML = "";
@@ -198,6 +201,133 @@ describe("glass React primitives", () => {
     });
 
     expect(host.querySelector("svg")).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("two webgl-backed GlassNodes share ONE WebGL2 context via the compositor", () => {
+    resetSharedGlassCompositorForTests();
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Safari/605.1.15 Version/17.0");
+    // Re-mock getContext: hand out the GL stub for webgl2 (the compositor's
+    // detached canvas) and keep the 2D-ish mock for everything else (scratch
+    // scenes + blit targets).
+    vi.restoreAllMocks();
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Safari/605.1.15 Version/17.0");
+    const { gl } = createStubGl();
+    installCanvasMocks();
+    const get2d = HTMLCanvasElement.prototype.getContext as ReturnType<typeof vi.fn>;
+    const baseImpl = get2d.getMockImplementation()!;
+    const getContextSpy = get2d.mockImplementation(function getContextMock(
+      this: HTMLCanvasElement,
+      type: string,
+      ...rest: unknown[]
+    ) {
+      if (type === "webgl2") return gl as never;
+      return baseImpl.call(this, type, ...rest);
+    });
+
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+
+    act(() => {
+      root.render(
+        <>
+          {[0, 1].map((index) => (
+            <GlassNode
+              engineMode="ts"
+              key={index}
+              lens={{ width: 32, height: 20, radius: 8, mapSize: 16 }}
+              lensX={4}
+              lensY={4}
+              sourceHeight={40}
+              sourceWidth={80}
+              drawSource={({ ctx }) => ctx.fillRect(0, 0, 80, 40)}
+              sourceVersion={`node-${index}`}
+            />
+          ))}
+        </>,
+      );
+    });
+
+    // Two glass canvases in the DOM, but exactly ONE webgl2 context request.
+    expect(host.querySelectorAll("canvas").length).toBe(2);
+    const webgl2Requests = getContextSpy.mock.calls.filter(([type]) => type === "webgl2");
+    expect(webgl2Requests.length).toBe(1);
+    act(() => root.unmount());
+  });
+
+  it("GlassNode skips redraws when sourceVersion is stable across new drawSource closures", () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Safari/605.1.15 Version/17.0");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    let draws = 0;
+
+    const renderNode = (version: string) => {
+      act(() => {
+        root.render(
+          <GlassNode
+            engineMode="ts"
+            lens={{ width: 32, height: 20, radius: 8, mapSize: 16 }}
+            lensX={4}
+            lensY={4}
+            sourceHeight={40}
+            sourceWidth={80}
+            // Fresh closure on every render — identity must NOT drive redraws.
+            drawSource={({ ctx }) => {
+              draws += 1;
+              ctx.fillRect(0, 0, 80, 40);
+            }}
+            sourceVersion={version}
+          />,
+        );
+      });
+    };
+
+    renderNode("a");
+    const drawsAfterMount = draws;
+    expect(drawsAfterMount).toBeGreaterThan(0);
+
+    renderNode("a"); // new closure, same content version -> no redraw
+    expect(draws).toBe(drawsAfterMount);
+
+    renderNode("b"); // version bump -> redraw
+    expect(draws).toBeGreaterThan(drawsAfterMount);
+    act(() => root.unmount());
+  });
+
+  it("GlassNode keeps legacy identity-keyed redraws when sourceVersion is omitted", () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Safari/605.1.15 Version/17.0");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    let draws = 0;
+
+    const renderNode = () => {
+      act(() => {
+        root.render(
+          <GlassNode
+            engineMode="ts"
+            lens={{ width: 32, height: 20, radius: 8, mapSize: 16 }}
+            lensX={4}
+            lensY={4}
+            sourceHeight={40}
+            sourceWidth={80}
+            drawSource={({ ctx }) => {
+              draws += 1;
+              ctx.fillRect(0, 0, 80, 40);
+            }}
+          />,
+        );
+      });
+    };
+
+    renderNode();
+    const drawsAfterMount = draws;
+    expect(drawsAfterMount).toBeGreaterThan(0);
+
+    renderNode(); // new closure, no version -> legacy behavior: redraw
+    expect(draws).toBeGreaterThan(drawsAfterMount);
     act(() => root.unmount());
   });
 

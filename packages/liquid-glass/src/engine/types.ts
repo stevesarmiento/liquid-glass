@@ -50,6 +50,13 @@ export interface MergedMapInput {
   lens: Partial<LensParams>;
 }
 
+/**
+ * Generated displacement map. Maps returned by the global map cache
+ * (`getCachedDisplacementMap`) are SHARED across consumers and must be
+ * treated as immutable — mutating `rgba` in place would corrupt every other
+ * consumer and silently skip GPU texture re-uploads (renderers cache uploads
+ * by map identity).
+ */
 export interface DisplacementMap {
   width: number;
   height: number;

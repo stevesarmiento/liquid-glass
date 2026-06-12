@@ -53,7 +53,8 @@ export interface GlassButtonProps extends ButtonHTMLAttributes<HTMLButtonElement
   /**
    * Press highlight style. "natural" (default) lets the glass itself carry
    * the press cue — boosted lens optics and saturation, no composited
-   * layers. "additive" also mounts the overexposure bloom + cursor light.
+   * layers. "additive" also mounts a hot overexposure bloom (light blowing
+   * out through the glass) on top of the natural cue.
    */
   pressHighlight?: GlassPressHighlight;
   /** Preset size for the button geometry and lens optics. */

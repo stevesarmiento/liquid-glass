@@ -352,13 +352,15 @@ describe("GlassDropdown", () => {
     pointer(trigger, "pointerup");
   });
 
-  it("toggles hover state with pointer enter/leave", () => {
+  it("has no hover treatment by design — pointer enter/leave changes nothing", () => {
     render();
     const trigger = getTrigger(host);
     expect(trigger.getAttribute("data-hovered")).toBeNull();
 
     pointer(trigger, "pointerover");
-    expect(trigger.getAttribute("data-hovered")).toBe("true");
+    // Press is the only state cue (matches GlassButton): hover sets no
+    // attribute and triggers no chrome cross-fade.
+    expect(trigger.getAttribute("data-hovered")).toBeNull();
 
     pointer(trigger, "pointerout");
     expect(trigger.getAttribute("data-hovered")).toBeNull();
@@ -399,6 +401,11 @@ describe("GlassDropdown", () => {
     render({ defaultOpen: true });
     expect(getTrigger(host).getAttribute("aria-expanded")).toBe("true");
     expect(getMenu(host).getAttribute("data-open")).toBe("true");
+  });
+
+  it("positions the open menu over the trigger by default", () => {
+    render({ defaultOpen: true });
+    expect(getMenu(host).style.top).toBe("0px");
   });
 
   it("a sub-3px press on an item stays a pure click and selects it", () => {

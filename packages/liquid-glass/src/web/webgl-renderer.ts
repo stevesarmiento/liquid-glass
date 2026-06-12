@@ -1,5 +1,11 @@
 import { MERGED_ALPHA_DISTANCE_RANGE } from "../engine/merged";
 import type { DisplacementMap, LensParams } from "../engine/types";
+import {
+  countBlurCache,
+  countGlassDraw,
+  glassWebglContextCreated,
+  glassWebglContextDestroyed,
+} from "./perf-stats";
 import { CANVAS_STRENGTH } from "./render-utils";
 import {
   BLUR_FRAGMENT_SHADER_SOURCE,
@@ -267,7 +273,8 @@ interface GlassUniforms {
   shadowBlur: WebGLUniformLocation | null;
 }
 
-interface GlResources {
+/** @internal Shared with the glass compositor (glass-compositor.ts). */
+export interface GlResources {
   blurProgram: WebGLProgram;
   glassProgram: WebGLProgram;
   blurUniforms: BlurUniforms;
@@ -334,6 +341,8 @@ export function createWebglGlassRenderer(
     return null;
   }
 
+  glassWebglContextCreated();
+
   return {
     canvas,
     isContextLost() {
@@ -371,6 +380,7 @@ export function createWebglGlassRenderer(
         r.cache.sceneWidth === sceneW &&
         r.cache.sceneHeight === sceneH &&
         r.cache.blurRadiusPx === blurRadiusPx;
+      countBlurCache(cacheValid);
       if (!cacheValid) {
         prepareBlurredScene(gl, r, input, sceneW, sceneH, blurRadiusPx, pixelRatio);
         r.cache.sceneKey = sceneKey;
@@ -385,6 +395,7 @@ export function createWebglGlassRenderer(
       }
 
       drawGlassPass(gl, r, input, viewport, outW, outH);
+      countGlassDraw("webgl");
     },
     clear() {
       if (destroyed || contextLost || !resources) return;
@@ -396,6 +407,7 @@ export function createWebglGlassRenderer(
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      glassWebglContextDestroyed();
       canvas.removeEventListener("webglcontextlost", onContextLost, false);
       canvas.removeEventListener("webglcontextrestored", onContextRestored, false);
       if (resources) {
@@ -411,7 +423,8 @@ export function createWebglGlassRenderer(
   };
 }
 
-function getWebgl2Context(canvas: HTMLCanvasElement): WebGL2RenderingContext | null {
+/** @internal Shared with the glass compositor. */
+export function getWebgl2Context(canvas: HTMLCanvasElement): WebGL2RenderingContext | null {
   if (typeof canvas.getContext !== "function") return null;
   let gl: unknown = null;
   try {
@@ -439,7 +452,8 @@ function isWebgl2Like(gl: unknown): boolean {
   return REQUIRED_GL_METHODS.every((method) => typeof candidate[method] === "function");
 }
 
-function safeGetLoseContextExtension(gl: WebGL2RenderingContext): { loseContext(): void } | null {
+/** @internal Shared with the glass compositor. */
+export function safeGetLoseContextExtension(gl: WebGL2RenderingContext): { loseContext(): void } | null {
   try {
     return (gl.getExtension?.("WEBGL_lose_context") as { loseContext(): void } | null) ?? null;
   } catch {
@@ -447,7 +461,8 @@ function safeGetLoseContextExtension(gl: WebGL2RenderingContext): { loseContext(
   }
 }
 
-function createResources(gl: WebGL2RenderingContext): GlResources {
+/** @internal Shared with the glass compositor. */
+export function createResources(gl: WebGL2RenderingContext): GlResources {
   const blurProgram = createProgram(gl, GLASS_VERTEX_SHADER_SOURCE, BLUR_FRAGMENT_SHADER_SOURCE);
   let glassProgram: WebGLProgram;
   try {
@@ -543,7 +558,8 @@ function createResources(gl: WebGL2RenderingContext): GlResources {
   };
 }
 
-function deleteResources(gl: WebGL2RenderingContext, r: GlResources): void {
+/** @internal Shared with the glass compositor. */
+export function deleteResources(gl: WebGL2RenderingContext, r: GlResources): void {
   try {
     gl.deleteProgram(r.blurProgram);
     gl.deleteProgram(r.glassProgram);
@@ -624,7 +640,8 @@ function requireResource<T>(resource: T | null, label: string): T {
   return resource;
 }
 
-function prepareBlurredScene(
+/** @internal Shared with the glass compositor. */
+export function prepareBlurredScene(
   gl: WebGL2RenderingContext,
   r: GlResources,
   input: WebglGlassDrawInput,
@@ -728,7 +745,8 @@ function runBlurPass(gl: WebGL2RenderingContext, r: GlResources, pass: BlurPass)
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
-function uploadMapTexture(gl: WebGL2RenderingContext, texture: WebGLTexture, map: DisplacementMap): void {
+/** @internal Shared with the glass compositor. */
+export function uploadMapTexture(gl: WebGL2RenderingContext, texture: WebGLTexture, map: DisplacementMap): void {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -746,13 +764,18 @@ function uploadMapTexture(gl: WebGL2RenderingContext, texture: WebGLTexture, map
   );
 }
 
-function drawGlassPass(
+/**
+ * @internal Shared with the glass compositor, which passes pooled map
+ * textures instead of the per-renderer `r.mapTexture`.
+ */
+export function drawGlassPass(
   gl: WebGL2RenderingContext,
   r: GlResources,
   input: WebglGlassDrawInput,
   viewport: WebglGlassViewport,
   outW: number,
   outH: number,
+  mapTexture: WebGLTexture = r.mapTexture,
 ): void {
   const lens = input.lens;
   const rawBaseScale = Math.max(lens.scaleX, lens.scaleY);
@@ -772,7 +795,7 @@ function drawGlassPass(
   gl.bindTexture(gl.TEXTURE_2D, r.pingTexture);
   gl.uniform1i(r.glassUniforms.scene, 0);
   gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, r.mapTexture);
+  gl.bindTexture(gl.TEXTURE_2D, mapTexture);
   gl.uniform1i(r.glassUniforms.map, 1);
 
   gl.uniform2f(r.glassUniforms.sceneSize, Math.max(1e-6, input.sceneWidth), Math.max(1e-6, input.sceneHeight));
@@ -883,11 +906,18 @@ function isImageElement(scene: WebglGlassSceneSource): scene is HTMLImageElement
   return typeof HTMLImageElement !== "undefined" && scene instanceof HTMLImageElement;
 }
 
-function clampPixelRatio(ratio: number): number {
+/** @internal Shared with the glass compositor. */
+export function clampPixelRatio(ratio: number): number {
   if (!Number.isFinite(ratio) || ratio <= 0) return 1;
   return Math.max(1, Math.min(ratio, 3));
 }
 
-function defaultPixelRatio(): number {
+/** @internal Shared with the glass compositor. */
+export function defaultPixelRatio(): number {
   return typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+}
+
+/** @internal Shared with the glass compositor. */
+export function createLinearMapTexture(gl: WebGL2RenderingContext): WebGLTexture {
+  return createLinearTexture(gl);
 }

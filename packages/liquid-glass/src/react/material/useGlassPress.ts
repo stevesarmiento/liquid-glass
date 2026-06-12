@@ -29,6 +29,12 @@ const DEFAULT_MAX_GLOW = 2;
 export const isGlassActivationKey = (key: string): boolean =>
   key === " " || key === "Enter" || key === "Spacebar";
 
+/**
+ * Minimal lens shape `boostLens` operates on. Allows preset lenses that omit
+ * derived fields (e.g. `mapSize`, which GlassNode auto-computes).
+ */
+export type GlassBoostableLens = Partial<LensParams> & Pick<LensParams, "scaleX" | "scaleY" | "glow">;
+
 const easeOutCubic = (t: number): number => 1 - (1 - t) ** 3;
 
 export interface GlassPressOptions {
@@ -67,6 +73,17 @@ export interface GlassLensBoost {
   glow?: number;
   /** Cap for the boosted glow. Defaults to 2. */
   maxGlow?: number;
+  /**
+   * Quantizes the GLOW term of the tween to this many steps. Glow is the only
+   * boosted parameter baked into the displacement map (`mapKey` excludes
+   * scaleX/scaleY), so each tween frame at continuous glow generates a fresh
+   * O(mapSize²) map. With e.g. 8 steps a full press touches at most 9 map-
+   * cache keys — shared by every control with the same optics — while the
+   * dominant visible cue (scale) stays perfectly continuous via shader
+   * uniforms / feColorMatrix. Endpoints (progress 0 and 1) are always exact.
+   * Omit for the legacy continuous glow.
+   */
+  glowSteps?: number;
 }
 
 /**
@@ -111,7 +128,7 @@ export interface GlassPress<T extends Element = Element> {
    * of swapping maps. With default boosts this matches the glass pressed cue
    * (scale ×1.15, +0.45 glow, capped at 2).
    */
-  boostLens(lens: LensParams, boost?: GlassLensBoost): LensParams;
+  boostLens<L extends GlassBoostableLens>(lens: L, boost?: GlassLensBoost): L;
 }
 
 /**
@@ -282,15 +299,18 @@ export function useGlassPress<T extends Element = Element>(
     holdRelease: methods.holdRelease,
     releaseIfIdle: methods.releaseIfIdle,
     cancel: methods.cancel,
-    boostLens(lens: LensParams, boost?: GlassLensBoost): LensParams {
+    boostLens<L extends GlassBoostableLens>(lens: L, boost?: GlassLensBoost): L {
       const scale = boost?.scale ?? DEFAULT_BOOST_SCALE;
       const glow = boost?.glow ?? DEFAULT_BOOST_GLOW;
       const maxGlow = boost?.maxGlow ?? DEFAULT_MAX_GLOW;
+      const glowSteps = boost?.glowSteps;
+      const glowProgress =
+        glowSteps && glowSteps > 0 ? Math.round(progress * glowSteps) / glowSteps : progress;
       return {
         ...lens,
         scaleX: lens.scaleX * (1 + (scale - 1) * progress),
         scaleY: lens.scaleY * (1 + (scale - 1) * progress),
-        glow: Math.min(maxGlow, lens.glow + glow * progress),
+        glow: Math.min(maxGlow, lens.glow + glow * glowProgress),
       };
     },
   };

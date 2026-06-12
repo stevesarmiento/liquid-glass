@@ -189,6 +189,29 @@ describe("useGlassPress", () => {
     expect(custom.scaleX).toBeCloseTo(40 * 1.5, 10);
     expect(custom.glow).toBeCloseTo(2, 10); // 1.9 + 0.1
   });
+
+  it("glowSteps quantizes the glow ramp to at most steps+1 values with exact endpoints", () => {
+    const lens: LensParams = normalizeLensParams({ glow: 0.5 });
+    const boost = { glowSteps: 4 };
+
+    mount(); // tween enabled
+    expect(latest.boostLens(lens, boost).glow).toBeCloseTo(0.5, 10); // resting endpoint
+
+    const glows = new Set<number>();
+    act(() => latest.press());
+    for (let i = 0; i < 40; i += 1) {
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      glows.add(latest.boostLens(lens, boost).glow);
+    }
+
+    expect(glows.size).toBeLessThanOrEqual(5); // 4 steps -> at most 5 distinct values
+    // Pressed endpoint is exact (progress 1 -> full default 0.45 boost).
+    expect(latest.boostLens(lens, boost).glow).toBeCloseTo(0.95, 10);
+    // Scale stays continuous/unquantized at the endpoint.
+    expect(latest.boostLens(lens, boost).scaleX).toBeCloseTo(lens.scaleX * 1.15, 10);
+  });
 });
 
 describe("isGlassActivationKey", () => {
