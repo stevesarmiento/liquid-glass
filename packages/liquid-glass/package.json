@@ -2,6 +2,25 @@
   "name": "liquid-glass",
   "version": "0.1.0",
   "private": false,
+  "description": "Universal liquid-glass engine, renderers, and React primitives.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stevesarmiento/liquid-glass.git",
+    "directory": "packages/liquid-glass"
+  },
+  "bugs": {
+    "url": "https://github.com/stevesarmiento/liquid-glass/issues"
+  },
+  "homepage": "https://github.com/stevesarmiento/liquid-glass/tree/main/packages/liquid-glass#readme",
+  "keywords": [
+    "liquid-glass",
+    "glassmorphism",
+    "svg-filter",
+    "webgl",
+    "wasm",
+    "react"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

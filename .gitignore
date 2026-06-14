@@ -5,5 +5,7 @@ target/
 .turbo/
 dist/
 packages/*/dist/
-packages/liquid-glass/wasm/
+packages/liquid-glass/wasm/*
+!packages/liquid-glass/wasm/.gitignore
+!packages/liquid-glass/wasm/.npmignore
 /references/

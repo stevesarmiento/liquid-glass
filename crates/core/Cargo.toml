@@ -2,6 +2,9 @@
 name = "liquid-glass-core"
 version = "0.1.0"
 edition = "2021"
+description = "Deterministic liquid-glass lens math and displacement-map generation."
+license = "MIT"
+repository = "https://github.com/stevesarmiento/liquid-glass"
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]

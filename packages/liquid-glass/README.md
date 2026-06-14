@@ -1,6 +1,11 @@
 # liquid-glass
 
+[![CI](https://github.com/stevesarmiento/liquid-glass/actions/workflows/ci.yml/badge.svg)](https://github.com/stevesarmiento/liquid-glass/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/stevesarmiento/liquid-glass/blob/main/LICENSE)
+
 Universal liquid glass engine and web adapter.
+
+This package is early and moving quickly. It is ready for experimentation, but APIs and rendering internals can change before a stable 1.0 release.
 
 The package exposes:
 

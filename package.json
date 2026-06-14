@@ -2,6 +2,16 @@
   "name": "liquid-glass-workspace",
   "version": "0.1.0",
   "private": true,
+  "description": "Research-to-implementation workspace for a reusable liquid-glass rendering system.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stevesarmiento/liquid-glass.git"
+  },
+  "bugs": {
+    "url": "https://github.com/stevesarmiento/liquid-glass/issues"
+  },
+  "homepage": "https://github.com/stevesarmiento/liquid-glass#readme",
   "type": "module",
   "packageManager": "bun@1.3.6",
   "workspaces": [

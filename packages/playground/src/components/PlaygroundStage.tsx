@@ -3,6 +3,7 @@ import type { GlassTint, GlassTintInput, GlassTintName, LiquidGlassEngineMode, L
 import type { GlassPressHighlight } from "@liquid-glass/design-system";
 
 import { ComponentDock } from "./ComponentDock";
+import { ControlCenterDemo } from "./ControlCenterDemo";
 import { DynamicIslandDemo } from "./DynamicIslandDemo";
 import { LockScreenKeypad } from "./LockScreenKeypad";
 import { PAINTING_URL, type ComponentVisibility, type IphoneScreen, type IslandDemo, type StageMode } from "../playgroundConfig";
@@ -71,6 +72,8 @@ export const PlaygroundStage = memo(function PlaygroundStage({
   tint,
   visibility,
 }: PlaygroundStageProps) {
+  const isControlCenter = iphoneScreen === "control-center";
+
   const lensStage = (
     <div
       ref={containerRef}
@@ -147,17 +150,30 @@ export const PlaygroundStage = memo(function PlaygroundStage({
       />
       {stageMode === "iphone" && (
         <>
-          <DynamicIslandDemo
-            backgroundUrl={backgroundUrl}
-            containerRef={containerRef}
-            engineMode={engineMode}
-            glassTint={glassTint}
-            islandDemo={islandDemo}
-            islandExpanded={islandExpanded}
-            lens={lens}
-            onCycle={onIslandCycle}
-            renderer={renderer}
-          />
+          {!isControlCenter && (
+            <DynamicIslandDemo
+              backgroundUrl={backgroundUrl}
+              containerRef={containerRef}
+              engineMode={engineMode}
+              glassTint={glassTint}
+              islandDemo={islandDemo}
+              islandExpanded={islandExpanded}
+              lens={lens}
+              onCycle={onIslandCycle}
+              renderer={renderer}
+            />
+          )}
+          {isControlCenter && (
+            <ControlCenterDemo
+              backgroundUrl={backgroundUrl}
+              containerRef={containerRef}
+              engineMode={engineMode}
+              glassTint={glassTint}
+              lens={lens}
+              pressHighlight={pressHighlight}
+              renderer={renderer}
+            />
+          )}
           {iphoneScreen === "passcode" && (
             <LockScreenKeypad
               backgroundUrl={backgroundUrl}
@@ -169,7 +185,7 @@ export const PlaygroundStage = memo(function PlaygroundStage({
               renderer={renderer}
             />
           )}
-          <div className="homeIndicator" aria-hidden="true" />
+          {!isControlCenter && <div className="homeIndicator" aria-hidden="true" />}
         </>
       )}
     </div>

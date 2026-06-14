@@ -2,6 +2,8 @@
   "name": "liquid-glass-docs",
   "version": "0.1.0",
   "private": true,
+  "description": "Documentation app for the liquid-glass workspace.",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5174",

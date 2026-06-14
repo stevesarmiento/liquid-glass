@@ -524,6 +524,549 @@ button, input { font: inherit; }
   opacity: 0.6;
 }
 
+.controlCenter {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  padding: 30px 22px 40px;
+  overflow: hidden;
+  pointer-events: none;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.24);
+}
+.controlCenter::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.24) 0%, rgba(0, 0, 0, 0.18) 36%, rgba(0, 0, 0, 0.24) 100%),
+    rgba(255, 255, 255, 0.24);
+  -webkit-backdrop-filter: blur(2px) saturate(1);
+  backdrop-filter: blur(2px) saturate(1);
+}
+.controlCenter::after {
+  position: absolute;
+  inset: 44% -16% -8%;
+  content: "";
+  background:
+    radial-gradient(ellipse 58% 24% at 50% 0%, rgba(255, 255, 255, 0.16), transparent 64%),
+    linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.58) 34%, rgba(0, 0, 0, 0.16) 100%);
+  filter: blur(14px);
+  opacity: 0.9;
+}
+.controlCenter > * {
+  position: relative;
+  z-index: 1;
+}
+.ccTopActions,
+.ccStatusRow,
+.ccCarrier,
+.ccStatusMeta,
+.ccPlayback,
+.ccFocus {
+  display: flex;
+  align-items: center;
+}
+.ccTopActions {
+  justify-content: space-between;
+  height: 24px;
+}
+.ccTopActions svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.ccTopActions svg:last-child {
+  width: 21px;
+  height: 21px;
+}
+.ccStatusRow {
+  justify-content: space-between;
+  gap: 9px;
+  margin-top: 30px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 13.5px;
+  font-weight: 620;
+}
+.ccCarrier {
+  gap: 4px;
+  min-width: 0;
+}
+.ccCarrier span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ccCarrier svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+.ccSignalBars {
+  display: inline-flex;
+  align-items: end;
+  gap: 1.5px;
+  width: 18px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.ccSignalBars span {
+  width: 3px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.ccSignalBars span:nth-child(1) { height: 5px; }
+.ccSignalBars span:nth-child(2) { height: 8px; opacity: 0.78; }
+.ccSignalBars span:nth-child(3) { height: 11px; opacity: 0.48; }
+.ccSignalBars span:nth-child(4) { height: 13px; opacity: 0.28; }
+.ccStatusMeta {
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: 15.5px;
+}
+.ccStatusMeta svg {
+  width: 13px;
+  height: 13px;
+  fill: currentColor;
+}
+.ccStatusMeta svg:nth-child(2) {
+  width: 14px;
+  height: 14px;
+}
+.ccBattery {
+  position: relative;
+  display: inline-flex;
+  width: 28px;
+  height: 14px;
+  padding: 2px;
+  border: 1.25px solid rgba(255, 255, 255, 0.48);
+  border-radius: 6px;
+}
+.ccBattery::after {
+  position: absolute;
+  right: -3.5px;
+  top: 4px;
+  width: 2px;
+  height: 5px;
+  content: "";
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.42);
+}
+.ccBattery span {
+  width: 6px;
+  border-radius: 2px;
+  background: #ff453a;
+}
+.ccPrimaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.ccGlassPanel,
+.ccGlassButton {
+  box-shadow:
+    0 16px 42px rgba(0, 0, 0, 0.2);
+}
+.ccGlassPanel {
+  position: relative;
+  isolation: isolate;
+}
+.ccPanelGlassNode,
+.ccPanelGlassContent,
+.ccPanelGlassSurface.lg-glass-surface {
+  position: absolute;
+  inset: 0;
+}
+.ccPanelGlassNode {
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.ccPanelGlassContent {
+  z-index: 1;
+  transform-origin: top left;
+}
+.ccPanelGlassSurface.lg-glass-surface {
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 16px 42px rgba(0, 0, 0, 0.2);
+}
+.ccPanelGlassSurface .lg-glass-surface__content {
+  display: none;
+}
+.ccPanelContent {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+}
+.ccGlassButton {
+  display: inline-grid;
+  place-items: center;
+  min-width: 0;
+  padding: 0 !important;
+  pointer-events: auto;
+  color: #fff;
+}
+.ccGlassButton > span:first-child {
+  width: 100%;
+  height: 100%;
+}
+.ccGlassButton > span:first-child > span,
+.ccButtonContent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.ccGlassButton .lgds-button__lens-glass.lg-glass-surface {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 12px 30px rgba(0, 0, 0, 0.18);
+}
+.ccGlassButton svg {
+  width: 55%;
+  height: 55%;
+  fill: currentColor;
+}
+.ccConnectivity,
+.ccMedia {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 32px;
+}
+.ccConnectivity {
+  --cc-large-toggle: min(42%, 64px);
+}
+.ccLargeToggle {
+  position: absolute;
+  width: var(--cc-large-toggle) !important;
+  height: var(--cc-large-toggle) !important;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  color: #fff;
+}
+.ccConnectivity .ccLargeToggle:nth-child(1) {
+  left: 9%;
+  top: 9%;
+}
+.ccConnectivity .ccLargeToggle:nth-child(2) {
+  right: 9%;
+  top: 9%;
+}
+.ccConnectivity .ccLargeToggle:nth-child(3) {
+  left: 9%;
+  bottom: 9%;
+}
+.ccMiniCluster {
+  position: absolute;
+  right: 9%;
+  bottom: 9%;
+  display: grid;
+  grid-template-columns: repeat(2, 31px);
+  gap: 8px;
+}
+.ccMiniToggle {
+  width: 31px !important;
+  height: 31px !important;
+  border-radius: 50%;
+}
+.ccMiniToggle svg {
+  width: 58%;
+  height: 58%;
+}
+.ccBluetoothGlyph {
+  overflow: visible;
+}
+.ccBluetoothGlyph path:first-child {
+  fill: none;
+}
+.ccBluetoothGlyph path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
+}
+.ccMedia {
+  padding: 0;
+}
+.ccMediaThumb {
+  position: absolute;
+  left: 12%;
+  top: 10%;
+  width: 34%;
+  aspect-ratio: 1;
+  border-radius: 22%;
+  background: rgba(255, 255, 255, 0.14);
+}
+.ccAirplay {
+  position: absolute;
+  right: 13%;
+  top: 13%;
+  display: grid;
+  place-items: center;
+  width: 28%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.13);
+}
+.ccAirplay svg {
+  width: 48%;
+  height: 48%;
+  fill: currentColor;
+}
+.ccMedia b {
+  position: absolute;
+  left: 10%;
+  bottom: 36%;
+  font-size: 17px;
+  font-weight: 760;
+}
+.ccPlayback {
+  position: absolute;
+  left: 11%;
+  right: 11%;
+  bottom: 9%;
+  justify-content: space-between;
+}
+.ccPlayback svg {
+  fill: currentColor;
+}
+.ccPlay {
+  width: 35px;
+  height: 35px;
+}
+.ccSkip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+}
+.ccSkip svg {
+  width: 29px;
+  height: 29px;
+}
+.ccSkip span {
+  position: absolute;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 800;
+}
+.ccSecondaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 72px));
+  gap: 14px;
+  margin-top: 14px;
+}
+.ccRoundLight,
+.ccUtilityButton {
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+.ccRoundLight {
+  width: 100% !important;
+  height: 100% !important;
+  color: #fff;
+}
+.ccRoundLight svg {
+  width: 45%;
+  height: 45%;
+}
+.ccFocus {
+  grid-column: 1 / span 2;
+  grid-row: 2;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0;
+  border-radius: 35px;
+}
+.ccFocus .ccButtonContent {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 11px 14px;
+}
+.ccFocusAvatar {
+  display: grid;
+  place-items: center;
+  width: 47px;
+  height: 47px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  color: #ca2ee8;
+  background: rgba(255, 255, 255, 0.96);
+}
+.ccFocusAvatar svg {
+  width: 58%;
+  height: 58%;
+  fill: currentColor;
+}
+.ccFocus b {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 16.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ccFocusChevron {
+  position: relative;
+  width: 14px;
+  height: 20px;
+  flex: 0 0 auto;
+  opacity: 0.64;
+}
+.ccFocusChevron::before,
+.ccFocusChevron::after {
+  position: absolute;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  content: "";
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+}
+.ccFocusChevron::before {
+  top: 2px;
+  transform: rotate(45deg);
+}
+.ccFocusChevron::after {
+  bottom: 2px;
+  transform: rotate(225deg);
+}
+.ccVerticalSlider {
+  position: relative;
+  grid-row: 1 / span 2;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden;
+  border-radius: 38px;
+}
+.ccVerticalSlider .ccButtonContent {
+  position: relative;
+  overflow: hidden;
+  border-radius: inherit;
+}
+.ccBrightness { grid-column: 3; }
+.ccVolume { grid-column: 4; }
+.ccSliderFill {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: -1px;
+  height: 50%;
+  border-radius: 0 0 38px 38px;
+  background: rgba(255, 255, 255, 0.96);
+}
+.ccVolume .ccSliderFill {
+  height: 42%;
+}
+.ccVerticalSlider svg {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  width: 31px;
+  height: 31px;
+  transform: translateX(-50%);
+}
+.ccBrightness svg {
+  color: #ffd60a;
+  fill: currentColor;
+  filter: drop-shadow(0 0 8px rgba(255, 214, 10, 0.42));
+}
+.ccVolume svg {
+  color: #14c8e8;
+  fill: currentColor;
+}
+.ccUtilityGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.ccUtilityButton {
+  width: 100% !important;
+  height: auto !important;
+  color: #fff;
+}
+.ccUtilityButton svg,
+.ccUtilityButton .ccCalculatorGlyph,
+.ccUtilityButton .ccBatteryGlyph,
+.ccUtilityButton .ccNoteGlyph {
+  width: 45%;
+  height: 45%;
+}
+.ccSubdued {
+  color: rgba(255, 255, 255, 0.68);
+}
+.ccCalculatorGlyph {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12%;
+  padding: 6%;
+  border: 4px solid currentColor;
+  border-radius: 9%;
+}
+.ccCalculatorGlyph span {
+  border-radius: 50%;
+  background: currentColor;
+}
+.ccBatteryGlyph {
+  position: relative;
+  display: block;
+  border: 5px solid currentColor;
+  border-radius: 7px;
+}
+.ccBatteryGlyph::after {
+  position: absolute;
+  right: -11%;
+  top: 31%;
+  width: 8%;
+  height: 38%;
+  content: "";
+  border-radius: 999px;
+  background: currentColor;
+}
+.ccNoteGlyph {
+  position: relative;
+  display: block;
+  border: 5px solid currentColor;
+  border-radius: 8px;
+}
+.ccNoteGlyph::before {
+  position: absolute;
+  left: 17%;
+  right: 17%;
+  top: 50%;
+  height: 5px;
+  content: "";
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(-10deg);
+}
+.ccNoteGlyph::after {
+  position: absolute;
+  left: 19%;
+  right: 20%;
+  top: 34%;
+  height: 5px;
+  content: "";
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(8deg);
+}
 .sceneSwitcher {
   position: fixed;
   top: 16px;
@@ -1204,6 +1747,73 @@ button, input { font: inherit; }
   .iphoneFrame { height: min(76vh, 700px); border-radius: 54px; }
   .iphoneBezel { padding: 6px; border-radius: 50px; }
   .iphoneScreen { border-radius: 44px; }
+  .controlCenter { padding: 24px 18px 32px; }
+  .ccTopActions { height: 22px; }
+  .ccTopActions svg {
+    width: 16px;
+    height: 16px;
+  }
+  .ccTopActions svg:last-child {
+    width: 19px;
+    height: 19px;
+  }
+  .ccStatusRow {
+    margin-top: 25px;
+    font-size: 12.5px;
+  }
+  .ccStatusMeta { gap: 4px; font-size: 14px; }
+  .ccCarrier svg {
+    width: 14px;
+    height: 14px;
+  }
+  .ccPrimaryGrid,
+  .ccSecondaryGrid,
+  .ccUtilityGrid {
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .ccConnectivity,
+  .ccMedia {
+    border-radius: 28px;
+  }
+  .ccSecondaryGrid {
+    grid-template-rows: repeat(2, minmax(0, 64px));
+  }
+  .ccMiniCluster {
+    grid-template-columns: repeat(2, 27px);
+    gap: 7px;
+  }
+  .ccMiniToggle {
+    width: 27px !important;
+    height: 27px !important;
+  }
+  .ccFocus .ccButtonContent {
+    gap: 9px;
+    padding: 9px 11px;
+  }
+  .ccFocusAvatar {
+    width: 42px;
+    height: 42px;
+  }
+  .ccFocus b,
+  .ccMedia b {
+    font-size: 15px;
+  }
+  .ccVerticalSlider {
+    border-radius: 34px;
+  }
+  .ccVerticalSlider svg {
+    bottom: 18px;
+    width: 27px;
+    height: 27px;
+  }
+  .ccUtilityButton svg,
+  .ccUtilityButton .ccCalculatorGlyph,
+  .ccUtilityButton .ccBatteryGlyph,
+  .ccUtilityButton .ccNoteGlyph {
+    width: 42%;
+    height: 42%;
+  }
   .lockScreen { padding: 64px 18px 36px; }
   .lockKeypad { grid-template-columns: repeat(3, 62px); gap: 12px 18px; margin-top: 24px; }
   .lockKey { width: 62px !important; height: 62px !important; }

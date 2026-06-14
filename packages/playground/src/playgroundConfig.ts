@@ -8,7 +8,14 @@ import {
   type LiquidGlassRenderer,
   type ResolvedLensParams,
 } from "liquid-glass";
-import { IconHouseFill, IconLocationFill, IconLockFill, IconMessageFill, IconSunMaxFill } from "symbols-react";
+import {
+  IconHouseFill,
+  IconLocationFill,
+  IconLockFill,
+  IconMessageFill,
+  IconSquareGrid2x2Fill,
+  IconSunMaxFill,
+} from "symbols-react";
 
 export const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
   ["width", "height", "radius", "mapSize"],
@@ -43,7 +50,7 @@ export type WallpaperId = "painting" | "ferry" | "macaw";
 export type TintMode = "preset" | "custom";
 export type StageMode = "painting" | "iphone";
 export type IslandDemo = "messages" | "weather" | "location";
-export type IphoneScreen = "home" | "passcode";
+export type IphoneScreen = "home" | "passcode" | "control-center";
 export type FloatingControlsPosition = { x: number; y: number };
 export type IslandSize = { width: number; height: number };
 export type FloatingControlsDrag = {
@@ -165,6 +172,7 @@ export const ISLAND_DEMOS: Array<{ id: IslandDemo; label: string; Icon: typeof I
 export const IPHONE_SCREENS: Array<{ id: IphoneScreen; label: string; Icon: typeof IconMessageFill }> = [
   { id: "home", label: "Home screen", Icon: IconHouseFill },
   { id: "passcode", label: "Passcode keypad", Icon: IconLockFill },
+  { id: "control-center", label: "Control Center", Icon: IconSquareGrid2x2Fill },
 ];
 
 /** The door code Mac shares in the Messages island demo. */

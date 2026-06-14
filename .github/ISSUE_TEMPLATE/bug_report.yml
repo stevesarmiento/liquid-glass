@@ -1,0 +1,53 @@
+name: Bug report
+description: Report incorrect behavior, rendering issues, or regressions.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include a minimal reproduction, code snippet, repo, or playground steps.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: package-version
+    attributes:
+      label: Package/version
+      placeholder: liquid-glass 0.1.0, main@abcdef, etc.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Engine math
+        - WASM
+        - DOM/SVG renderer
+        - Canvas/WebGL renderer
+        - React primitives
+        - Design system
+        - Playground/docs
+        - Research tools
+        - Other
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, OS, framework, bundler, React version, Bun/Node version, or Rust toolchain where relevant.
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Screenshots, logs, performance traces, or related links.
