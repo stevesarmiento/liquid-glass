@@ -13,19 +13,19 @@
   },
   "dependencies": {
     "@liquid-glass/design-system": "workspace:*",
-    "@vitejs/plugin-react": "^4.5.2",
+    "@vitejs/plugin-react": "^6.0.5",
     "liquid-glass": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "styled-components": "^6.1.19",
     "symbols-react": "^1.3.0",
-    "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "@types/node": "^24.0.3",
-    "vitest": "^3.2.4"
+    "@types/node": "^26.2.0",
+    "vitest": "^4.1.10"
   }
 }

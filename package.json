@@ -40,9 +40,9 @@
     "summarize": "node scripts/summarize.mjs"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
+    "@changesets/cli": "^3.0.0",
     "prettier": "^3.6.2",
     "turbo": "^2.5.4",
-    "typescript": "^5.8.3"
+    "typescript": "^7.0.2"
   }
 }
