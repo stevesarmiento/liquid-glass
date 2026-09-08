@@ -1,5 +1,12 @@
 import { useState, useSyncExternalStore, type CSSProperties, type PointerEvent, type RefObject } from "react";
-import { resolveGlassTint, type GlassTintName, type LensParams, type LiquidGlassControllerStats, type LiquidGlassEngineMode, type ResolvedLensParams } from "liquid-glass";
+import {
+  resolveGlassTint,
+  type GlassTintName,
+  type LensParams,
+  type LiquidGlassControllerStats,
+  type LiquidGlassEngineMode,
+  type ResolvedLensParams,
+} from "liquid-glass";
 
 import {
   CONTROL_GROUPS,
@@ -154,15 +161,15 @@ export function FloatingControls({
               previewBackground={previewBackground}
               stats={stats}
             />
-            <VisibilitySection onVisibilityChange={onVisibilityChange} visibility={visibility} />
-            <LensesSection
+            <VisibilitySection
               blend={blend}
               dropdownGap={dropdownGap}
               dualLens={dualLens}
               onBlendChange={onBlendChange}
               onDropdownGapChange={onDropdownGapChange}
               onDualLensChange={onDualLensChange}
-              showDropdownGap={visibility.dropdown}
+              onVisibilityChange={onVisibilityChange}
+              visibility={visibility}
             />
             <TintSection
               customTint={customTint}
@@ -389,9 +396,25 @@ function DebugIncidents() {
 }
 
 function VisibilitySection({
+  blend,
+  dropdownGap,
+  dualLens,
+  onBlendChange,
+  onDropdownGapChange,
+  onDualLensChange,
   onVisibilityChange,
   visibility,
-}: Pick<FloatingControlsProps, "onVisibilityChange" | "visibility">) {
+}: Pick<
+  FloatingControlsProps,
+  | "blend"
+  | "dropdownGap"
+  | "dualLens"
+  | "onBlendChange"
+  | "onDropdownGapChange"
+  | "onDualLensChange"
+  | "onVisibilityChange"
+  | "visibility"
+>) {
   return (
     <details className="accordionSection" open>
       <summary>
@@ -401,14 +424,52 @@ function VisibilitySection({
       <div className="accordionBody">
         <div className="visibilityGrid">
           {VISIBILITY_OPTIONS.map(({ key, label }) => (
-            <label className="visibilityToggle" key={key}>
-              <span>{label}</span>
-              <input
-                checked={visibility[key]}
-                onChange={(event) => onVisibilityChange(key, event.target.checked)}
-                type="checkbox"
-              />
-            </label>
+            <div key={key}>
+              <label className="visibilityToggle">
+                <span>{label}</span>
+                <input
+                  checked={visibility[key]}
+                  onChange={(event) => onVisibilityChange(key, event.target.checked)}
+                  type="checkbox"
+                />
+              </label>
+              {key === "glass" && visibility.glass && (
+                <div className="visibilitySubOptions">
+                  <div className="segments tintMode">
+                    {(["single", "dual"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        className={(dualLens ? "dual" : "single") === mode ? "active" : ""}
+                        onClick={() => onDualLensChange(mode === "dual")}
+                        type="button"
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                  {dualLens && <BlendSlider blend={blend} onBlendChange={onBlendChange} />}
+                </div>
+              )}
+              {key === "dropdown" && visibility.dropdown && (
+                <div className="visibilitySubOptions">
+                  <BlendSlider blend={blend} onBlendChange={onBlendChange} />
+                  <label>
+                    <span>
+                      menu inset
+                      <b>{Math.round(dropdownGap)}</b>
+                    </span>
+                    <input
+                      min={0}
+                      max={60}
+                      step={1}
+                      type="range"
+                      value={dropdownGap}
+                      onChange={(event) => onDropdownGapChange(Number(event.target.value))}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -416,68 +477,26 @@ function VisibilitySection({
   );
 }
 
-function LensesSection({
-  blend,
-  dropdownGap,
-  dualLens,
-  onBlendChange,
-  onDropdownGapChange,
-  onDualLensChange,
-  showDropdownGap,
-}: Pick<FloatingControlsProps, "blend" | "dropdownGap" | "dualLens" | "onBlendChange" | "onDropdownGapChange" | "onDualLensChange"> & {
-  showDropdownGap: boolean;
-}) {
+/**
+ * Blend is one shared value with two consumers: the dual-lens stage merge and
+ * the dropdown's trigger/menu merge — so it appears under both checkboxes.
+ */
+function BlendSlider({ blend, onBlendChange }: Pick<FloatingControlsProps, "blend" | "onBlendChange">) {
   return (
-    <details className="accordionSection" open>
-      <summary>
-        <span>Lenses</span>
-        <b>{`${dualLens ? "dual" : "single"} / blend ${Math.round(blend)}`}</b>
-      </summary>
-      <div className="accordionBody">
-        <div className="segments tintMode">
-          {(["single", "dual"] as const).map((mode) => (
-            <button
-              key={mode}
-              className={(dualLens ? "dual" : "single") === mode ? "active" : ""}
-              onClick={() => onDualLensChange(mode === "dual")}
-              type="button"
-            >
-              {mode}
-            </button>
-          ))}
-        </div>
-        <label>
-          <span>
-            blend
-            <b>{Math.round(blend)}</b>
-          </span>
-          <input
-            min={0}
-            max={120}
-            step={1}
-            type="range"
-            value={blend}
-            onChange={(event) => onBlendChange(Number(event.target.value))}
-          />
-        </label>
-        {showDropdownGap && (
-          <label>
-            <span>
-              menu inset
-              <b>{Math.round(dropdownGap)}</b>
-            </span>
-            <input
-              min={0}
-              max={60}
-              step={1}
-              type="range"
-              value={dropdownGap}
-              onChange={(event) => onDropdownGapChange(Number(event.target.value))}
-            />
-          </label>
-        )}
-      </div>
-    </details>
+    <label>
+      <span>
+        blend
+        <b>{Math.round(blend)}</b>
+      </span>
+      <input
+        min={0}
+        max={120}
+        step={1}
+        type="range"
+        value={blend}
+        onChange={(event) => onBlendChange(Number(event.target.value))}
+      />
+    </label>
   );
 }
 
@@ -488,7 +507,10 @@ function TintSection({
   onTintNameChange,
   tintMode,
   tintName,
-}: Pick<FloatingControlsProps, "customTint" | "onCustomTintChange" | "onTintModeChange" | "onTintNameChange" | "tintMode" | "tintName">) {
+}: Pick<
+  FloatingControlsProps,
+  "customTint" | "onCustomTintChange" | "onTintModeChange" | "onTintNameChange" | "tintMode" | "tintName"
+>) {
   return (
     <details className="accordionSection" open>
       <summary>
@@ -577,10 +599,12 @@ function TintSection({
                   onTintModeChange("preset");
                   onTintNameChange(name);
                 }}
-                style={{
-                  "--swatch-bg": option.background,
-                  "--swatch-border": option.border,
-                } as CSSProperties}
+                style={
+                  {
+                    "--swatch-bg": option.background,
+                    "--swatch-border": option.border,
+                  } as CSSProperties
+                }
                 title={name}
                 type="button"
               />

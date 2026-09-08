@@ -619,12 +619,8 @@ describe("LiquidGlassController", () => {
       expect(controller.stats.activeRenderer).toBe("webgl");
       expect(uniforms).toContain("uniform1i:u_maskMode=1");
       expect(uniforms).toContain(`uniform1f:u_alphaDistRange=${MERGED_ALPHA_DISTANCE_RANGE}`);
-      expect(uniforms).toContain(
-        `uniform4f:u_tintColor=${72 / 255},${186 / 255},${190 / 255},0.16`,
-      );
-      expect(uniforms).toContain(
-        `uniform4f:u_borderColor=${178 / 255},${245 / 255},${246 / 255},0.56`,
-      );
+      expect(uniforms).toContain(`uniform4f:u_tintColor=${72 / 255},${186 / 255},${190 / 255},0.16`);
+      expect(uniforms).toContain(`uniform4f:u_borderColor=${178 / 255},${245 / 255},${246 / 255},0.56`);
       // Matches the CSS chrome's 1px border (see chromeForTint).
       expect(uniforms).toContain("uniform1f:u_borderWidth=1");
       // Preset highlights are transparent → rim strength floored at the
@@ -662,9 +658,7 @@ describe("LiquidGlassController", () => {
       expect(uniforms).toContain("uniform1f:u_saturation=1.22");
       // Drop shadow: aqua shadow rgba(7, 71, 79, 0.28); geometry is the CSS
       // 0 18px 48px scaled so |offset| + blur fits the alpha band.
-      expect(uniforms).toContain(
-        `uniform4f:u_shadowColor=${7 / 255},${71 / 255},${79 / 255},0.28`,
-      );
+      expect(uniforms).toContain(`uniform4f:u_shadowColor=${7 / 255},${71 / 255},${79 / 255},0.28`);
       const shadowScale = MERGED_ALPHA_DISTANCE_RANGE / (18 + 48);
       expect(uniforms).toContain(`uniform2f:u_shadowOffset=0,${18 * shadowScale}`);
       expect(uniforms).toContain(`uniform1f:u_shadowBlur=${48 * shadowScale}`);
@@ -714,9 +708,7 @@ describe("LiquidGlassController", () => {
 
       expect(controller.stats.activeRenderer).toBe("webgl");
       // Base fill: #6fd7d0 at the default 0.08 opacity.
-      expect(uniforms).toContain(
-        `uniform4f:u_tintColor=${111 / 255},${215 / 255},${208 / 255},0.08`,
-      );
+      expect(uniforms).toContain(`uniform4f:u_tintColor=${111 / 255},${215 / 255},${208 / 255},0.08`);
       // Opaque white highlight: glow color carries the full opacity (the rim
       // strength also rides the same alpha, above its 0.18 floor).
       expect(uniforms).toContain("uniform4f:u_glowColor=1,1,1,1");
@@ -808,10 +800,7 @@ describe("LiquidGlassController", () => {
         source,
         engine: createTsLiquidGlassEngine(),
         lens: { mapSize: 32 },
-        lenses: [
-          { position: { x: 0.25, y: 0.5 } },
-          { position: { x: 0.75, y: 0.5 } },
-        ],
+        lenses: [{ position: { x: 0.25, y: 0.5 } }, { position: { x: 0.75, y: 0.5 } }],
       });
 
       // Falls back to the single-lens SVG path for the primary lens.
@@ -884,6 +873,55 @@ describe("LiquidGlassController", () => {
       controller.setLensPosition(1, { x: 171, y: 103, unit: "px" });
       flushFrame();
       expect(spy).toHaveBeenCalledTimes(2);
+      controller.destroy();
+    });
+
+    it("redraws after cycling merged → single → merged with identical inputs", () => {
+      const uniforms: string[] = [];
+      const twoD = { clearRect: vi.fn(), putImageData: vi.fn() };
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+        (type: string) => (type === "webgl2" ? stubWebgl2(uniforms) : twoD) as never,
+      );
+      class FakeImage {
+        decoding = "";
+        src = "";
+        currentSrc = "";
+        complete = true;
+        naturalWidth = 64;
+        naturalHeight = 48;
+        onload: (() => void) | null = null;
+      }
+      vi.stubGlobal("Image", FakeImage);
+
+      const { container, source, target } = createMergedFixture();
+      const controller = createLiquidGlassController({
+        container,
+        source,
+        target,
+        mode: "target",
+        engine: createTsLiquidGlassEngine(),
+        renderer: "auto",
+        sourceImageUrl: "/image.jpg",
+        lens: { mapSize: 32 },
+        lenses: MERGED_LENSES,
+      });
+      // The first apply kicks off the image "load"; re-apply to render.
+      controller.update({});
+      flushFrame();
+      const mergedDraws = () => uniforms.filter((entry) => entry === "uniform1i:u_maskMode=1").length;
+      expect(mergedDraws()).toBe(1);
+
+      // Single-lens mode routes through the SVG path, which hides AND clears
+      // the webgl canvas. Toggling back with nothing moved reproduces the
+      // exact pre-cycle draw key — the no-op skip must not keep the cleared
+      // framebuffer on screen (the "clicking dual does nothing" bug).
+      controller.update({ lenses: undefined });
+      flushFrame();
+      expect(controller.stats.activeRenderer).toBe("svg");
+
+      controller.update({ lenses: MERGED_LENSES });
+      flushFrame();
+      expect(mergedDraws()).toBe(2);
       controller.destroy();
     });
   });

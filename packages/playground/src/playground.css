@@ -1,14 +1,26 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
   margin: 0;
   min-width: 320px;
   height: 100vh;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   color: #f5efe5;
   background: #15120e;
   overflow: hidden;
 }
-button, input { font: inherit; }
+button,
+input {
+  font: inherit;
+}
 /* No native drag ghosts anywhere in the tuning surface (see App.tsx). */
 img,
 svg,
@@ -43,7 +55,7 @@ canvas {
   inset: 0;
   pointer-events: none;
   content: "";
-  background-image: radial-gradient(circle, rgba(255,255,255,0.13) 1px, transparent 1.6px);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.13) 1px, transparent 1.6px);
   background-size: 24px 24px;
   background-position: 12px 12px;
   mask-image: radial-gradient(ellipse 85% 85% at 50% 50%, #000 30%, transparent 100%);
@@ -99,11 +111,31 @@ canvas {
   background: linear-gradient(180deg, #4c4c52, #28282d 50%, #44444a);
   box-shadow: inset 0 0 1px rgba(255, 255, 255, 0.25);
 }
-.iphoneButton.actionButton { left: -3px; top: 16%; height: 30px; }
-.iphoneButton.volumeUp { left: -3px; top: 23.5%; height: 56px; }
-.iphoneButton.volumeDown { left: -3px; top: 32.5%; height: 56px; }
-.iphoneButton.powerButton { right: -3px; top: 25.5%; height: 90px; }
-.iphoneButton.cameraControl { right: -3px; top: 60%; height: 44px; }
+.iphoneButton.actionButton {
+  left: -3px;
+  top: 16%;
+  height: 30px;
+}
+.iphoneButton.volumeUp {
+  left: -3px;
+  top: 23.5%;
+  height: 56px;
+}
+.iphoneButton.volumeDown {
+  left: -3px;
+  top: 32.5%;
+  height: 56px;
+}
+.iphoneButton.powerButton {
+  right: -3px;
+  top: 25.5%;
+  height: 90px;
+}
+.iphoneButton.cameraControl {
+  right: -3px;
+  top: 60%;
+  height: 44px;
+}
 .dynamicIsland {
   position: absolute;
   left: 50%;
@@ -187,8 +219,8 @@ canvas {
   font-size: 16.5px;
   letter-spacing: 0.1px;
   line-height: 1.32;
-  padding-left:10px;
-  margin-top:0px;
+  padding-left: 10px;
+  margin-top: 0px;
 }
 .islandMessage {
   display: flex;
@@ -221,7 +253,8 @@ canvas {
   content: "";
   border-radius: 30%;
   background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22.5098 20.3613'%3E%3Crect height='20.3613' opacity='0' width='22.5098' x='0' y='0'/%3E%3Cpath d='M3.86719 20.3613C5.03906 20.3613 7.95898 19.082 9.61914 17.8906C9.78516 17.7734 9.92188 17.7246 10.0586 17.7246C10.1855 17.7344 10.3125 17.7441 10.4395 17.7441C17.4805 17.7441 22.1484 13.7402 22.1484 8.87695C22.1484 3.96484 17.2266 0 11.0742 0C4.92188 0 0 3.96484 0 8.87695C0 12.002 1.92383 14.7461 5.05859 16.4258C5.20508 16.5039 5.25391 16.6504 5.17578 16.7969C4.62891 17.6953 3.65234 18.7695 3.28125 19.2578C2.90039 19.7461 3.11523 20.3613 3.86719 20.3613Z' fill='white' fill-opacity='0.85'/%3E%3C/svg%3E") center / 12px 11px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22.5098 20.3613'%3E%3Crect height='20.3613' opacity='0' width='22.5098' x='0' y='0'/%3E%3Cpath d='M3.86719 20.3613C5.03906 20.3613 7.95898 19.082 9.61914 17.8906C9.78516 17.7734 9.92188 17.7246 10.0586 17.7246C10.1855 17.7344 10.3125 17.7441 10.4395 17.7441C17.4805 17.7441 22.1484 13.7402 22.1484 8.87695C22.1484 3.96484 17.2266 0 11.0742 0C4.92188 0 0 3.96484 0 8.87695C0 12.002 1.92383 14.7461 5.05859 16.4258C5.20508 16.5039 5.25391 16.6504 5.17578 16.7969C4.62891 17.6953 3.65234 18.7695 3.28125 19.2578C2.90039 19.7461 3.11523 20.3613 3.86719 20.3613Z' fill='white' fill-opacity='0.85'/%3E%3C/svg%3E")
+      center / 12px 11px no-repeat,
     linear-gradient(180deg, #5ddb6f, #2eb84e);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
@@ -236,7 +269,7 @@ canvas {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding-right:5px;
+  padding-right: 5px;
 }
 .islandMessageHead b {
   font-size: 14.5px;
@@ -373,7 +406,9 @@ canvas {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
-.islandDemoChip:active { transform: scale(0.9); }
+.islandDemoChip:active {
+  transform: scale(0.9);
+}
 .islandDemoChip.active {
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
@@ -458,10 +493,23 @@ canvas {
   animation: lockShake 560ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 @keyframes lockShake {
-  10%, 90% { transform: translateX(-2px); }
-  20%, 80% { transform: translateX(5px); }
-  30%, 50%, 70% { transform: translateX(-9px); }
-  40%, 60% { transform: translateX(9px); }
+  10%,
+  90% {
+    transform: translateX(-2px);
+  }
+  20%,
+  80% {
+    transform: translateX(5px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-9px);
+  }
+  40%,
+  60% {
+    transform: translateX(9px);
+  }
 }
 .lockKeypad {
   display: grid;
@@ -626,10 +674,21 @@ canvas {
   border-radius: 2px;
   background: currentColor;
 }
-.ccSignalBars span:nth-child(1) { height: 5px; }
-.ccSignalBars span:nth-child(2) { height: 8px; opacity: 0.78; }
-.ccSignalBars span:nth-child(3) { height: 11px; opacity: 0.48; }
-.ccSignalBars span:nth-child(4) { height: 13px; opacity: 0.28; }
+.ccSignalBars span:nth-child(1) {
+  height: 5px;
+}
+.ccSignalBars span:nth-child(2) {
+  height: 8px;
+  opacity: 0.78;
+}
+.ccSignalBars span:nth-child(3) {
+  height: 11px;
+  opacity: 0.48;
+}
+.ccSignalBars span:nth-child(4) {
+  height: 13px;
+  opacity: 0.28;
+}
 .ccStatusMeta {
   gap: 5px;
   flex: 0 0 auto;
@@ -676,8 +735,7 @@ canvas {
 }
 .ccGlassPanel,
 .ccGlassButton {
-  box-shadow:
-    0 16px 42px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.2);
 }
 .ccGlassPanel {
   position: relative;
@@ -967,8 +1025,12 @@ canvas {
   overflow: hidden;
   border-radius: inherit;
 }
-.ccBrightness { grid-column: 3; }
-.ccVolume { grid-column: 4; }
+.ccBrightness {
+  grid-column: 3;
+}
+.ccVolume {
+  grid-column: 4;
+}
 .ccSliderFill {
   position: absolute;
   left: -1px;
@@ -1112,8 +1174,12 @@ canvas {
     outline-color 140ms ease,
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.wallpaperSwatch:hover { transform: scale(1.08); }
-.wallpaperSwatch:active { transform: scale(0.9); }
+.wallpaperSwatch:hover {
+  transform: scale(1.08);
+}
+.wallpaperSwatch:active {
+  transform: scale(0.9);
+}
 .wallpaperSwatch.active {
   outline: 2px solid #fff;
   outline-offset: 2px;
@@ -1139,8 +1205,12 @@ canvas {
     background-color 150ms ease,
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.sceneTrigger:hover { background: #232323; }
-.sceneTrigger:active { transform: scale(0.97); }
+.sceneTrigger:hover {
+  background: #232323;
+}
+.sceneTrigger:active {
+  transform: scale(0.97);
+}
 .sceneTrigger svg {
   width: 15px;
   height: 15px;
@@ -1152,7 +1222,9 @@ canvas {
   opacity: 0.6;
   transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.sceneTrigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.sceneTrigger[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
 .sceneMenuBackdrop {
   position: fixed;
   inset: 0;
@@ -1192,8 +1264,12 @@ canvas {
   font-size: 11px;
   font-weight: 480;
 }
-.sceneMenu button:hover { background: rgba(255, 255, 255, 0.07); }
-.sceneMenu button.active { background: rgba(255, 255, 255, 0.11); }
+.sceneMenu button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.sceneMenu button.active {
+  background: rgba(255, 255, 255, 0.11);
+}
 .paintingLayer {
   position: absolute;
   inset: 0;
@@ -1221,7 +1297,13 @@ canvas {
   pointer-events: none;
   overflow: hidden;
   background:
-    radial-gradient(ellipse var(--glass-highlight-width) var(--glass-highlight-height) at var(--glass-highlight-x) var(--glass-highlight-y), var(--glass-tint-highlight) 0%, var(--glass-tint-highlight) var(--glass-highlight-core), transparent var(--glass-highlight-spread)),
+    radial-gradient(
+      ellipse var(--glass-highlight-width) var(--glass-highlight-height) at var(--glass-highlight-x)
+        var(--glass-highlight-y),
+      var(--glass-tint-highlight) 0%,
+      var(--glass-tint-highlight) var(--glass-highlight-core),
+      transparent var(--glass-highlight-spread)
+    ),
     var(--glass-tint-bg);
   border: 1px solid var(--glass-tint-border);
   box-shadow:
@@ -1242,8 +1324,18 @@ canvas {
   filter: blur(10px);
   opacity: 0.62;
   transform: rotate(var(--glass-highlight-rotation));
-  mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--glass-highlight-core), transparent var(--glass-highlight-spread));
-  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--glass-highlight-core), transparent var(--glass-highlight-spread));
+  mask-image: radial-gradient(
+    ellipse at center,
+    #000 0%,
+    #000 var(--glass-highlight-core),
+    transparent var(--glass-highlight-spread)
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse at center,
+    #000 0%,
+    #000 var(--glass-highlight-core),
+    transparent var(--glass-highlight-spread)
+  );
 }
 .glassChrome::after {
   position: absolute;
@@ -1252,8 +1344,8 @@ canvas {
   pointer-events: none;
   content: "";
   box-shadow:
-    inset 1px 0 rgba(255,255,255,0.22),
-    inset -1px 0 rgba(0,0,0,0.08);
+    inset 1px 0 rgba(255, 255, 255, 0.22),
+    inset -1px 0 rgba(0, 0, 0, 0.08);
 }
 .componentDock {
   position: absolute;
@@ -1277,11 +1369,11 @@ canvas {
   min-height: 132px;
   padding: 32px;
   background: #ffffff;
-  border: 1px solid rgba(0,0,0,0.12);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 24px;
   box-shadow:
-    0 24px 70px rgba(0,0,0,0.24),
-    0 2px 8px rgba(0,0,0,0.08);
+    0 24px 70px rgba(0, 0, 0, 0.24),
+    0 2px 8px rgba(0, 0, 0, 0.08);
 }
 /*
  * Dark preview surface for judging outward-sampling (negative scale) looks:
@@ -1331,7 +1423,7 @@ canvas {
   min-width: 0;
 }
 .switchPreviewRow span {
-  color: rgba(17,17,17,0.5);
+  color: rgba(17, 17, 17, 0.5);
   font-size: 11px;
   font-weight: 680;
   letter-spacing: 0;
@@ -1391,7 +1483,7 @@ canvas {
   pointer-events: none;
   color: rgba(255, 248, 237, 0.76);
   font-size: 12px;
-  text-shadow: 0 1px 10px rgba(0,0,0,0.45);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
 }
 .floatingControls {
   position: fixed;
@@ -1418,7 +1510,7 @@ canvas {
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.2),
     0 4px 16px rgba(0, 0, 0, 0.1),
-    inset 0 0 0 1px rgba(255,255,255,0.06);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   user-select: none;
   transition:
     transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -1429,7 +1521,7 @@ canvas {
   transform: scale(0.98);
   box-shadow:
     0 10px 30px rgba(0, 0, 0, 0.26),
-    inset 0 0 0 1px rgba(255,255,255,0.08);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 .dragHandle,
 .iconButton {
@@ -1451,7 +1543,7 @@ canvas {
   transition: background-color 150ms ease;
 }
 .dragHandle:hover {
-  background: rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.08);
 }
 .dragHandle:active {
   cursor: grabbing;
@@ -1472,7 +1564,7 @@ canvas {
   height: 32px;
   flex: 0 0 auto;
   border-radius: 50%;
-  color: rgba(255,255,255,0.84);
+  color: rgba(255, 255, 255, 0.84);
   cursor: pointer;
   transition:
     background-color 150ms ease,
@@ -1480,7 +1572,7 @@ canvas {
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .iconButton:hover {
-  background: rgba(255,255,255,0.12);
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
 .iconButton:active {
@@ -1509,7 +1601,7 @@ canvas {
   box-shadow:
     0 1px 8px rgba(0, 0, 0, 0.25),
     0 18px 48px rgba(0, 0, 0, 0.22),
-    inset 0 0 0 1px rgba(255,255,255,0.07);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07);
   animation: panelIn 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
   cursor: default;
 }
@@ -1538,12 +1630,12 @@ canvas {
 }
 .accordionSection {
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  background: rgba(255,255,255,0.035);
+  background: rgba(255, 255, 255, 0.035);
 }
 .accordionSection[open] {
-  background: rgba(255,255,255,0.055);
+  background: rgba(255, 255, 255, 0.055);
 }
 .accordionSection summary {
   display: flex;
@@ -1552,7 +1644,7 @@ canvas {
   gap: 12px;
   min-height: 38px;
   padding: 0 12px;
-  color: rgba(255,255,255,0.88);
+  color: rgba(255, 255, 255, 0.88);
   font-size: 13px;
   font-weight: 560;
   cursor: pointer;
@@ -1565,7 +1657,7 @@ canvas {
   display: none;
 }
 .accordionSection summary:hover {
-  background: rgba(255,255,255,0.045);
+  background: rgba(255, 255, 255, 0.045);
   color: #fff;
 }
 .accordionSection summary::after {
@@ -1589,7 +1681,7 @@ canvas {
   margin-left: auto;
   max-width: 112px;
   overflow: hidden;
-  color: rgba(255,255,255,0.46);
+  color: rgba(255, 255, 255, 0.46);
   font-size: 11px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -1602,7 +1694,9 @@ canvas {
   gap: 10px;
   padding: 0 12px 12px;
 }
-.stats div, .controlsPanel label span, .labelRow {
+.stats div,
+.controlsPanel label span,
+.labelRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1612,16 +1706,16 @@ canvas {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 .segments button {
   height: 30px;
   border: 0;
-  border-right: 1px solid rgba(255,255,255,0.07);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
   background: transparent;
-  color: rgba(255,255,255,0.68);
+  color: rgba(255, 255, 255, 0.68);
   cursor: pointer;
   font-size: 12px;
   font-weight: 560;
@@ -1630,14 +1724,32 @@ canvas {
     color 140ms ease,
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.segments button:last-child { border-right: 0; }
-.segments button:hover { color: #fff; }
-.segments button:active { transform: scale(0.96); }
-.segments button.active { background: #fff; color: #15191b; }
-.segments.tintMode { grid-template-columns: repeat(2, 1fr); }
+.segments button:last-child {
+  border-right: 0;
+}
+.segments button:hover {
+  color: #fff;
+}
+.segments button:active {
+  transform: scale(0.96);
+}
+.segments button.active {
+  background: #fff;
+  color: #15191b;
+}
+.segments.tintMode {
+  grid-template-columns: repeat(2, 1fr);
+}
 .visibilityGrid {
   display: grid;
   gap: 6px;
+}
+.visibilitySubOptions {
+  display: grid;
+  gap: 10px;
+  margin: 6px 0 4px 10px;
+  padding-left: 12px;
+  border-left: 2px solid rgba(255, 255, 255, 0.1);
 }
 .group {
   display: grid;
@@ -1646,7 +1758,7 @@ canvas {
 .controlsPanel label {
   display: grid;
   gap: 6px;
-  color: rgba(255,255,255,0.54);
+  color: rgba(255, 255, 255, 0.54);
   font-size: 12px;
 }
 .controlsPanel label.visibilityToggle {
@@ -1656,8 +1768,8 @@ canvas {
   min-height: 34px;
   padding: 0 10px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.045);
-  color: rgba(255,255,255,0.78);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.78);
   cursor: pointer;
 }
 .visibilityToggle input {
@@ -1667,13 +1779,14 @@ canvas {
   accent-color: #6fd7d0;
   cursor: pointer;
 }
-.controlsPanel label b, .labelRow b {
-  color: rgba(255,255,255,0.86);
+.controlsPanel label b,
+.labelRow b {
+  color: rgba(255, 255, 255, 0.86);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .labelRow {
-  color: rgba(255,255,255,0.52);
+  color: rgba(255, 255, 255, 0.52);
   font-size: 12px;
 }
 .controlsPanel input[type="range"] {
@@ -1685,9 +1798,9 @@ canvas {
   display: grid;
   gap: 9px;
   padding: 10px;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-  background: rgba(255,255,255,0.045);
+  background: rgba(255, 255, 255, 0.045);
 }
 .colorControl {
   grid-template-columns: minmax(0, 1fr) 44px;
@@ -1697,7 +1810,7 @@ canvas {
   width: 44px;
   height: 28px;
   padding: 0;
-  border: 1px solid rgba(255,255,255,0.14);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 7px;
   background: transparent;
   cursor: pointer;
@@ -1709,13 +1822,11 @@ canvas {
 }
 .tintSwatch {
   aspect-ratio: 1;
-  border: 1px solid rgba(255,255,255,0.16);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  background:
-    linear-gradient(180deg, var(--swatch-border), transparent 45%),
-    var(--swatch-bg);
+  background: linear-gradient(180deg, var(--swatch-border), transparent 45%), var(--swatch-bg);
   cursor: pointer;
-  box-shadow: inset 0 1px rgba(255,255,255,0.55);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.55);
   transition:
     outline-color 140ms ease,
     transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -1733,7 +1844,7 @@ canvas {
   gap: 6px;
   margin: 0;
   padding: 12px 0 0;
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 .stats div {
   display: grid;
@@ -1742,22 +1853,32 @@ canvas {
   gap: 2px;
   padding: 8px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.045);
+  background: rgba(255, 255, 255, 0.045);
 }
 .stats dt {
-  color: rgba(255,255,255,0.42);
+  color: rgba(255, 255, 255, 0.42);
   font-size: 11px;
 }
 .stats dd {
   margin: 0;
-  color: rgba(255,255,255,0.88);
+  color: rgba(255, 255, 255, 0.88);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 880px) {
-  body { height: 100vh; overflow: hidden; }
-  .shell { grid-template-columns: 1fr; height: 100vh; overflow: hidden; }
-  .stage { height: 100vh; min-height: 100vh; }
+  body {
+    height: 100vh;
+    overflow: hidden;
+  }
+  .shell {
+    grid-template-columns: 1fr;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .stage {
+    height: 100vh;
+    min-height: 100vh;
+  }
   .componentDock {
     top: 50%;
     width: min(340px, calc(100% - 32px));
@@ -1770,7 +1891,9 @@ canvas {
   .modalPreview {
     width: 100%;
   }
-  .componentPreview { padding: 22px; }
+  .componentPreview {
+    padding: 22px;
+  }
   .switchPreview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     min-height: 0;
@@ -1780,12 +1903,26 @@ canvas {
     grid-template-columns: 22px minmax(0, 1fr);
     gap: 8px;
   }
-  .attribution { display: none; }
-  .iphoneFrame { height: min(76vh, 700px); border-radius: 54px; }
-  .iphoneBezel { padding: 6px; border-radius: 50px; }
-  .iphoneScreen { border-radius: 44px; }
-  .controlCenter { padding: 24px 18px 32px; }
-  .ccTopActions { height: 22px; }
+  .attribution {
+    display: none;
+  }
+  .iphoneFrame {
+    height: min(76vh, 700px);
+    border-radius: 54px;
+  }
+  .iphoneBezel {
+    padding: 6px;
+    border-radius: 50px;
+  }
+  .iphoneScreen {
+    border-radius: 44px;
+  }
+  .controlCenter {
+    padding: 24px 18px 32px;
+  }
+  .ccTopActions {
+    height: 22px;
+  }
   .ccTopActions svg {
     width: 16px;
     height: 16px;
@@ -1798,7 +1935,10 @@ canvas {
     margin-top: 25px;
     font-size: 12.5px;
   }
-  .ccStatusMeta { gap: 4px; font-size: 14px; }
+  .ccStatusMeta {
+    gap: 4px;
+    font-size: 14px;
+  }
   .ccCarrier svg {
     width: 14px;
     height: 14px;
@@ -1851,10 +1991,25 @@ canvas {
     width: 42%;
     height: 42%;
   }
-  .lockScreen { padding: 64px 18px 36px; }
-  .lockKeypad { grid-template-columns: repeat(3, 62px); gap: 12px 18px; margin-top: 24px; }
-  .lockKey { width: 62px !important; height: 62px !important; }
-  .lockKeyDigit { font-size: 26px; }
-  .lockDots { gap: 18px; }
-  .lockFooter { max-width: 222px; }
+  .lockScreen {
+    padding: 64px 18px 36px;
+  }
+  .lockKeypad {
+    grid-template-columns: repeat(3, 62px);
+    gap: 12px 18px;
+    margin-top: 24px;
+  }
+  .lockKey {
+    width: 62px !important;
+    height: 62px !important;
+  }
+  .lockKeyDigit {
+    font-size: 26px;
+  }
+  .lockDots {
+    gap: 18px;
+  }
+  .lockFooter {
+    max-width: 222px;
+  }
 }

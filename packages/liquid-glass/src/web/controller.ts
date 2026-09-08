@@ -1,11 +1,7 @@
 import { normalizeLensParams } from "../engine/defaults";
 import { getSharedLiquidGlassEngine } from "../engine/create-engine";
 import { getCachedDisplacementMap } from "../engine/map-cache";
-import {
-  MERGED_ALPHA_DISTANCE_RANGE,
-  generateMergedDisplacementMap,
-  mergedMapKey,
-} from "../engine/merged";
+import { MERGED_ALPHA_DISTANCE_RANGE, generateMergedDisplacementMap, mergedMapKey } from "../engine/merged";
 import { clampLensScales, clampMergedScales } from "../engine/map-slope";
 import { colorMatrixStringForScale, mapKey, targetBleed } from "../engine/ts-engine";
 import type {
@@ -39,11 +35,7 @@ import {
   type GlassTintInput,
   type GlassTintName,
 } from "./tints";
-import {
-  createWebglGlassRenderer,
-  type WebglGlassChrome,
-  type WebglGlassRenderer,
-} from "./webgl-renderer";
+import { createWebglGlassRenderer, type WebglGlassChrome, type WebglGlassRenderer } from "./webgl-renderer";
 
 export interface LiquidGlassControllerStats {
   activeEngine: "wasm" | "ts";
@@ -257,9 +249,11 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
   state.container.append(canvasRenderer.canvas);
   syncResizeObserver();
   apply();
-  void engine.ready.then(() => {
-    if (!destroyed) scheduleApply();
-  }).catch(() => undefined);
+  void engine.ready
+    .then(() => {
+      if (!destroyed) scheduleApply();
+    })
+    .catch(() => undefined);
 
   return {
     stats,
@@ -382,13 +376,12 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
   function apply(): void {
     if (destroyed) return;
     const applyStarted = performance.now();
-    const targetElement = state.mode === "target" ? state.target ?? state.source : state.source;
+    const targetElement = state.mode === "target" ? (state.target ?? state.source) : state.source;
     if (!targetElement) return;
 
     if (state.respectReducedTransparency && reducedTransparency) {
       let domWrites = 0;
-      domWrites += Number(setStyle(canvasRenderer.canvas, "display", "none"));
-      canvasRenderer.clear();
+      domWrites += Number(hideCanvasRenderer());
       domWrites += Number(hideWebglCanvas());
       domWrites += Number(setStyle(targetElement, "filter", ""));
       if (state.source) domWrites += Number(setStyle(state.source, "filter", ""));
@@ -422,8 +415,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     // "source" mode geometry must come from the source element's rect (it can
     // differ from the container), while "target" mode positions the overlay
     // within the container.
-    const geometryElement =
-      state.mode === "source" ? state.source ?? state.container : state.container;
+    const geometryElement = state.mode === "source" ? (state.source ?? state.container) : state.container;
     const rect = geometryElement.getBoundingClientRect();
     const geometry = engine.computeLensGeometry({
       containerWidth: rect.width,
@@ -471,8 +463,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     if (activeRenderer === "webgl" && webglRenderer && webglState) {
       const image = ensureCanvasImage(state.sourceImageUrl);
       domWrites += Number(setStyle(webglState.canvas, "display", "block"));
-      domWrites += Number(setStyle(canvasRenderer.canvas, "display", "none"));
-      canvasRenderer.clear();
+      domWrites += Number(hideCanvasRenderer());
       domWrites += Number(setStyle(targetElement, "filter", ""));
       domWrites += Number(setStyle(targetElement, "visibility", "hidden"));
       const inactive = state.mode === "target" ? state.source : state.target;
@@ -573,8 +564,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       return;
     }
 
-    domWrites += Number(setStyle(canvasRenderer.canvas, "display", "none"));
-    canvasRenderer.clear();
+    domWrites += Number(hideCanvasRenderer());
     domWrites += Number(hideWebglCanvas());
     if (state.target) domWrites += Number(setStyle(state.target, "visibility", ""));
 
@@ -670,8 +660,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     let maxX = -Infinity;
     let maxY = -Infinity;
     const centers = instances.map((instance) => {
-      const cx =
-        instance.position.unit === "px" ? instance.position.x : instance.position.x * containerWidth;
+      const cx = instance.position.unit === "px" ? instance.position.x : instance.position.x * containerWidth;
       const cy =
         instance.position.unit === "px" ? instance.position.y : instance.position.y * containerHeight;
       minX = Math.min(minX, cx - instance.width / 2);
@@ -688,8 +677,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     const chrome = chromeForTint(state.tint);
     const shadowMargin =
       chrome && chrome.shadowColor && chrome.shadowColor[3] > 0
-        ? Math.hypot(chrome.shadowOffset?.[0] ?? 0, chrome.shadowOffset?.[1] ?? 0) +
-          (chrome.shadowBlur ?? 0)
+        ? Math.hypot(chrome.shadowOffset?.[0] ?? 0, chrome.shadowOffset?.[1] ?? 0) + (chrome.shadowBlur ?? 0)
         : 0;
     const margin = state.blend + targetBleed(state.lens) + shadowMargin;
     const regionLeft = Math.max(0, minX - margin);
@@ -776,8 +764,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
 
     if (activeRenderer === "webgl" && webglRenderer && webglState) {
       domWrites += Number(setStyle(webglState.canvas, "display", "block"));
-      domWrites += Number(setStyle(canvasRenderer.canvas, "display", "none"));
-      canvasRenderer.clear();
+      domWrites += Number(hideCanvasRenderer());
       if (image && lastMergedMap) {
         if (`mw|${mergedDrawKey}` !== lastWebglDrawKey) {
           webglRenderer.render({
@@ -870,10 +857,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       borderWidth: 1,
       highlight: highlight ? [highlight[0], highlight[1], highlight[2]] : [1, 1, 1],
       highlightStrength: Math.max(highlight ? highlight[3] : 0, MIN_RIM_STRENGTH),
-      lightDir: rotateDir(
-        lightDirFromHighlight(tint.highlightX, tint.highlightY),
-        tint.highlightRotation,
-      ),
+      lightDir: rotateDir(lightDirFromHighlight(tint.highlightX, tint.highlightY), tint.highlightRotation),
       highlightSpread: tint.highlightSpread,
       highlightCore: tint.highlightCore,
       highlightAniso: [tint.highlightWidth, tint.highlightHeight],
@@ -900,8 +884,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
   function warnMergedFallback(): void {
     if (warnedMergedFallback) return;
     warnedMergedFallback = true;
-    const env = (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env
-      ?.NODE_ENV;
+    const env = (globalThis as { process?: { env?: { NODE_ENV?: string } } }).process?.env?.NODE_ENV;
     if (env === "production") return;
     // eslint-disable-next-line no-console
     console.warn(
@@ -969,10 +952,22 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     return renderer;
   }
 
+  function hideCanvasRenderer(): boolean {
+    const changed = setStyle(canvasRenderer.canvas, "display", "none");
+    canvasRenderer.clear();
+    // Same invalidation as hideWebglCanvas: a cleared canvas must redraw
+    // even when the next apply's draw inputs are identical.
+    lastCanvasDrawKey = "";
+    return changed;
+  }
+
   function hideWebglCanvas(): boolean {
     if (!webglState?.renderer) return false;
     const changed = setStyle(webglState.canvas, "display", "none");
     webglState.renderer.clear();
+    // The framebuffer is now blank, so the no-op skip key must not suppress
+    // the next draw (e.g. cycling dual → single → dual with nothing moved).
+    lastWebglDrawKey = "";
     return changed;
   }
 }
@@ -1119,9 +1114,7 @@ function updateSvgGeometry(
   primitiveWrites += Number(setAttr(elements.mapImage, "y", geometry.top));
   primitiveWrites += Number(setAttr(elements.mapImage, "width", geometry.width));
   primitiveWrites += Number(setAttr(elements.mapImage, "height", geometry.height));
-  primitiveWrites += Number(
-    setAttr(elements.mapMatrix, "values", colorMatrixStringForScale(scaleX, scaleY)),
-  );
+  primitiveWrites += Number(setAttr(elements.mapMatrix, "values", colorMatrixStringForScale(scaleX, scaleY)));
   primitiveWrites += Number(setAttr(elements.sourceBlur, "stdDeviation", String(lens.blur * 0.18)));
   const baseScale = Math.max(Math.abs(scaleX), Math.abs(scaleY));
   primitiveWrites += Number(setAttr(elements.displacementR, "scale", baseScale * (1 + 0.2 * lens.chroma)));
@@ -1250,7 +1243,13 @@ function createCanvasRenderer() {
       // No-fold guard (see engine/map-slope.ts): identical clamp to the SVG
       // and WebGL sinks so all renderers stay visually consistent.
       const clampedScales = mapMask
-        ? clampMergedScales(input.map, input.lens, input.geometry.width, input.geometry.height, CANVAS_STRENGTH)
+        ? clampMergedScales(
+            input.map,
+            input.lens,
+            input.geometry.width,
+            input.geometry.height,
+            CANVAS_STRENGTH,
+          )
         : clampLensScales(input.map, input.lens, { strength: CANVAS_STRENGTH });
       const sampleLens =
         clampedScales.scaleX !== input.lens.scaleX || clampedScales.scaleY !== input.lens.scaleY
@@ -1308,7 +1307,9 @@ function createCanvasRenderer() {
           if (mapMask) {
             distance = sampleMapDistance(input.map, cssX, cssY, input.geometry.width, input.geometry.height);
             coverage = Math.min(1, Math.max(0, 0.5 - distance));
-          } else if (!roundedRectInside(cssX, cssY, input.geometry.width, input.geometry.height, input.geometry.radius)) {
+          } else if (
+            !roundedRectInside(cssX, cssY, input.geometry.width, input.geometry.height, input.geometry.radius)
+          ) {
             coverage = 0;
           }
           // Drop shadow under the glass: decode the blob distance at the
@@ -1369,8 +1370,7 @@ function createCanvasRenderer() {
             // Backdrop saturation (Rec. 709 luma, same weights as the
             // shader), applied before tint compositing.
             if (saturation !== 1) {
-              const lum =
-                0.2126 * out[outIndex] + 0.7152 * out[outIndex + 1] + 0.0722 * out[outIndex + 2];
+              const lum = 0.2126 * out[outIndex] + 0.7152 * out[outIndex + 1] + 0.0722 * out[outIndex + 2];
               out[outIndex] = Math.round(lum + (out[outIndex] - lum) * saturation);
               out[outIndex + 1] = Math.round(lum + (out[outIndex + 1] - lum) * saturation);
               out[outIndex + 2] = Math.round(lum + (out[outIndex + 2] - lum) * saturation);
@@ -1379,8 +1379,12 @@ function createCanvasRenderer() {
             const tintAlpha = chrome.tint[3];
             if (tintAlpha > 0) {
               out[outIndex] = Math.round(out[outIndex] * (1 - tintAlpha) + chrome.tint[0] * 255 * tintAlpha);
-              out[outIndex + 1] = Math.round(out[outIndex + 1] * (1 - tintAlpha) + chrome.tint[1] * 255 * tintAlpha);
-              out[outIndex + 2] = Math.round(out[outIndex + 2] * (1 - tintAlpha) + chrome.tint[2] * 255 * tintAlpha);
+              out[outIndex + 1] = Math.round(
+                out[outIndex + 1] * (1 - tintAlpha) + chrome.tint[1] * 255 * tintAlpha,
+              );
+              out[outIndex + 2] = Math.round(
+                out[outIndex + 2] * (1 - tintAlpha) + chrome.tint[2] * 255 * tintAlpha,
+              );
             }
             // Interior highlight glow src-over the tint, under the border:
             // per-lens primary gradient lobe + rotated, blur-widened
@@ -1405,8 +1409,12 @@ function createCanvasRenderer() {
               const glowAlpha = combined * glowColor[3];
               if (glowAlpha > 0) {
                 out[outIndex] = Math.round(out[outIndex] * (1 - glowAlpha) + glowColor[0] * 255 * glowAlpha);
-                out[outIndex + 1] = Math.round(out[outIndex + 1] * (1 - glowAlpha) + glowColor[1] * 255 * glowAlpha);
-                out[outIndex + 2] = Math.round(out[outIndex + 2] * (1 - glowAlpha) + glowColor[2] * 255 * glowAlpha);
+                out[outIndex + 1] = Math.round(
+                  out[outIndex + 1] * (1 - glowAlpha) + glowColor[1] * 255 * glowAlpha,
+                );
+                out[outIndex + 2] = Math.round(
+                  out[outIndex + 2] * (1 - glowAlpha) + glowColor[2] * 255 * glowAlpha,
+                );
               }
             }
             // Border band -borderWidth < d < 0 with ~1px AA on both edges
@@ -1416,9 +1424,15 @@ function createCanvasRenderer() {
               Math.min(1, Math.max(0, distance + chrome.borderWidth + 0.5));
             const borderAlpha = chrome.border[3] * band;
             if (borderAlpha > 0) {
-              out[outIndex] = Math.round(out[outIndex] * (1 - borderAlpha) + chrome.border[0] * 255 * borderAlpha);
-              out[outIndex + 1] = Math.round(out[outIndex + 1] * (1 - borderAlpha) + chrome.border[1] * 255 * borderAlpha);
-              out[outIndex + 2] = Math.round(out[outIndex + 2] * (1 - borderAlpha) + chrome.border[2] * 255 * borderAlpha);
+              out[outIndex] = Math.round(
+                out[outIndex] * (1 - borderAlpha) + chrome.border[0] * 255 * borderAlpha,
+              );
+              out[outIndex + 1] = Math.round(
+                out[outIndex + 1] * (1 - borderAlpha) + chrome.border[1] * 255 * borderAlpha,
+              );
+              out[outIndex + 2] = Math.round(
+                out[outIndex + 2] * (1 - borderAlpha) + chrome.border[2] * 255 * borderAlpha,
+              );
             }
           }
 
@@ -1429,8 +1443,12 @@ function createCanvasRenderer() {
             const shadowWeight = (shadowAlpha * (1 - coverage)) / outA;
             const glassWeight = coverage / outA;
             out[outIndex] = Math.round(out[outIndex] * glassWeight + shadowColor![0] * 255 * shadowWeight);
-            out[outIndex + 1] = Math.round(out[outIndex + 1] * glassWeight + shadowColor![1] * 255 * shadowWeight);
-            out[outIndex + 2] = Math.round(out[outIndex + 2] * glassWeight + shadowColor![2] * 255 * shadowWeight);
+            out[outIndex + 1] = Math.round(
+              out[outIndex + 1] * glassWeight + shadowColor![1] * 255 * shadowWeight,
+            );
+            out[outIndex + 2] = Math.round(
+              out[outIndex + 2] * glassWeight + shadowColor![2] * 255 * shadowWeight,
+            );
             out[outIndex + 3] = Math.round(outA * 255);
           }
         }
