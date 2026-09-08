@@ -23,6 +23,20 @@ export interface LensParams {
   edgeExponent?: number;
   /** Rotation of the specular highlight axis, in degrees. Default 45. */
   specularRotation?: number;
+  /**
+   * Upper bound on the rendered displacement field's spatial gradient, in
+   * px of displacement per px of screen. Above 1 the sampled backdrop folds
+   * over itself (mirroring artifacts near edges); renderers soft-limit the
+   * effective scale so the measured map slope stays below this cap.
+   *
+   * The default is 1.4, not 1: the reference (Aave) defaults preset itself
+   * peaks at ~1.29 on the short axis — a ~2px mirrored band inside the edge
+   * ring that is part of the shipped look — so the default cap sits just
+   * above it and only reins in grossly folding configurations (small lenses,
+   * low depth, high scale reach 2–18 unclamped). Set ≤ 0.95 for strictly
+   * fold-free optics; ~100 effectively disables the guard.
+   */
+  maxSlope?: number;
   blur: number;
   mapSize: number;
 }

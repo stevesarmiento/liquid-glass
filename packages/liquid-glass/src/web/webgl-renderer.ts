@@ -1,3 +1,4 @@
+import { clampLensScales, clampMergedScales } from "../engine/map-slope";
 import { MERGED_ALPHA_DISTANCE_RANGE } from "../engine/merged";
 import type { DisplacementMap, LensParams } from "../engine/types";
 import {
@@ -137,6 +138,12 @@ export interface WebglGlassDrawInput {
   map: DisplacementMap;
   /** Normalized lens params (see normalizeLensParams). */
   lens: LensParams;
+  /**
+   * Lens `map` was generated from, when it differs from `lens` (e.g. a
+   * transiently quantized map stretched over the exact lens box). Only used
+   * by the no-fold scale clamp's interior test; defaults to `lens`.
+   */
+  mapLens?: LensParams;
   geometry: WebglGlassLensRect;
   /** Scene size in CSS units. */
   sceneWidth: number;
@@ -778,11 +785,19 @@ export function drawGlassPass(
   mapTexture: WebGLTexture = r.mapTexture,
 ): void {
   const lens = input.lens;
-  const rawBaseScale = Math.max(lens.scaleX, lens.scaleY);
-  const baseScale = rawBaseScale * (input.strength ?? CANVAS_STRENGTH);
-  const ratioX = rawBaseScale > 0 ? lens.scaleX / rawBaseScale : 0;
-  const ratioY = rawBaseScale > 0 ? lens.scaleY / rawBaseScale : 0;
   const geometry = input.geometry;
+  const strength = input.strength ?? CANVAS_STRENGTH;
+  // No-fold guard (see engine/map-slope.ts): soft-limit the effective scales
+  // so the map's measured slope never folds the backdrop. Memoized by map
+  // identity — one WeakMap hit + a few float ops per draw.
+  const clamped =
+    input.maskMode === "map"
+      ? clampMergedScales(input.map, lens, geometry.width, geometry.height, strength)
+      : clampLensScales(input.map, lens, { strength, generatingLens: input.mapLens });
+  const rawBaseScale = Math.max(clamped.scaleX, clamped.scaleY);
+  const baseScale = rawBaseScale * strength;
+  const ratioX = rawBaseScale > 0 ? clamped.scaleX / rawBaseScale : 0;
+  const ratioY = rawBaseScale > 0 ? clamped.scaleY / rawBaseScale : 0;
   const radius = Math.max(0, Math.min(geometry.radius, geometry.width / 2, geometry.height / 2));
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);

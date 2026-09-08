@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { normalizeLensParams } from "../engine/defaults";
+import { clampLensScales } from "../engine/map-slope";
 import { MERGED_ALPHA_DISTANCE_RANGE } from "../engine/merged";
+import { generateDisplacementMap } from "../engine/ts-engine";
 import type { DisplacementMap } from "../engine/types";
 import { createWebglGlassRenderer, type WebglGlassDrawInput } from "./webgl-renderer";
 import {
@@ -269,6 +271,50 @@ describe("createWebglGlassRenderer", () => {
     expect(calls.filter((name) => name === "drawArrays").length).toBeGreaterThanOrEqual(2);
     // Scene and map textures uploaded.
     expect(calls.filter((name) => name === "texImage2D").length).toBeGreaterThanOrEqual(2);
+    renderer?.destroy();
+  });
+
+  it("writes unclamped u_chromaScale for a defaults-look map (no-fold clamp is a no-op)", () => {
+    const { gl, calls } = createStubGl();
+    const renderer = createWebglGlassRenderer(createStubCanvas(gl));
+    const lens = normalizeLensParams();
+    const map = generateDisplacementMap(lens);
+
+    renderer?.render(
+      makeDrawInput({
+        map,
+        lens,
+        geometry: { left: 0, top: 0, width: lens.width, height: lens.height, radius: lens.radius },
+      }),
+    );
+
+    const base = Math.max(lens.scaleX, lens.scaleY);
+    expect(calls).toContain(
+      `uniform3f:u_chromaScale=${base * (1 + 0.2 * lens.chroma)},${base * (1 + 0.1 * lens.chroma)},${base}`,
+    );
+    renderer?.destroy();
+  });
+
+  it("clamps u_chromaScale for a folding lens (no-fold clamp)", () => {
+    const { gl, calls } = createStubGl();
+    const renderer = createWebglGlassRenderer(createStubCanvas(gl));
+    const lens = normalizeLensParams({ width: 36, height: 22, radius: 11, mapSize: 128 });
+    const map = generateDisplacementMap(lens);
+
+    renderer?.render(
+      makeDrawInput({
+        map,
+        lens,
+        geometry: { left: 0, top: 0, width: lens.width, height: lens.height, radius: lens.radius },
+      }),
+    );
+
+    const clamped = clampLensScales(map, lens, { strength: 1 });
+    expect(clamped.scaleX).toBeLessThan(lens.scaleX);
+    const base = Math.max(clamped.scaleX, clamped.scaleY);
+    expect(calls).toContain(
+      `uniform3f:u_chromaScale=${base * (1 + 0.2 * lens.chroma)},${base * (1 + 0.1 * lens.chroma)},${base}`,
+    );
     renderer?.destroy();
   });
 

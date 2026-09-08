@@ -11,9 +11,15 @@ import {
 
 import { getSharedLiquidGlassEngine } from "../engine/create-engine";
 import { DEFAULT_LENS_PARAMS, autoMapSize, normalizeLensParams } from "../engine/defaults";
+import { getCachedDisplacementMap } from "../engine/map-cache";
+import {
+  clampScalesForMap,
+  computeLensMapTexelSlope,
+  type MapTexelSlope,
+} from "../engine/map-slope";
 import { colorMatrixStringForScale, mapKey } from "../engine/ts-engine";
 import type { LensParams, LiquidGlassEngineMode } from "../engine/types";
-import { getGlassFilterBleed, getGlassFilterVersion } from "../web/filter-version";
+import { getGlassFilterBleed, getGlassFilterPrimitiveVersion } from "../web/filter-version";
 import {
   renderLocalGlassCanvas,
   type GlassCanvasSource,
@@ -36,6 +42,7 @@ import { useGlassQualityLevel } from "./useGlassQualityLevel";
 import { useIsSafari } from "./useIsSafari";
 import { usePrefersReducedTransparency } from "./usePrefersReducedTransparency";
 import { useRenderGate } from "./useRenderGate";
+import { DEFAULT_RESIZE_SETTLE_MS, useTransientMapLens } from "./useTransientMapLens";
 
 export interface GlassNodeProps {
   lens?: Partial<LensParams>;
@@ -82,6 +89,14 @@ export interface GlassNodeProps {
    * re-entry.
    */
   pauseOffscreen?: boolean;
+  /**
+   * Quiet time (ms) after a lens size change before the displacement map is
+   * regenerated at the exact size. During a rapid resize burst the map is
+   * looked up at a coarsely quantized size and stretched over the exact box
+   * (see useTransientMapLens), so continuous morphs stop generating one map
+   * per frame. 0 disables (always exact). Default 120.
+   */
+  resizeSettleMs?: number;
   disabled?: boolean;
 }
 
@@ -106,6 +121,7 @@ export function GlassNode({
   respectReducedTransparency = true,
   adaptiveQuality = true,
   pauseOffscreen = true,
+  resizeSettleMs = DEFAULT_RESIZE_SETTLE_MS,
   disabled = false,
 }: GlassNodeProps): ReactElement {
   const id = useId();
@@ -122,6 +138,13 @@ export function GlassNode({
   const gateActive = useRenderGate(rootRef, { enabled: pauseOffscreen });
   const [readyVersion, setReadyVersion] = useState(0);
   const [mapUrl, setMapUrl] = useState("");
+  // Measured texel slope of the current SVG map (no-fold guard input); set
+  // alongside mapUrl so both describe the same map.
+  const [mapSlopeInfo, setMapSlopeInfo] = useState<{
+    slope: MapTexelSlope;
+    mapWidth: number;
+    mapHeight: number;
+  } | null>(null);
   const [webglFailed, setWebglFailed] = useState(false);
   const engine = useMemo(() => getSharedLiquidGlassEngine({ mode: engineMode }), [engineMode]);
   // When the caller doesn't pin mapSize, derive it from the lens size in
@@ -141,6 +164,9 @@ export function GlassNode({
     );
     return normalizeLensParams({ ...input, ...quality, mapSize });
   }, [JSON.stringify(lensInput ?? {}), qualityLevel]);
+  // Map-lookup lens: quantized during resize bursts, exact after settle.
+  // Geometry (feImage rect, canvas size, filter region) always uses `lens`.
+  const mapLens = useTransientMapLens(lens, resizeSettleMs);
   const baseTint = useMemo(() => resolveGlassTint(tintInput), [JSON.stringify(tintInput)]);
   const tint = reducedTransparency ? withTintBackgroundAlpha(baseTint, 0.85) : baseTint;
   const activeRenderer = resolveRenderer({ renderer, isSafari, hasCanvasSource: Boolean(drawSource), hasSvgSource: Boolean(sourceChildren) });
@@ -154,13 +180,9 @@ export function GlassNode({
   const filterHeight = sourceHeight + filterBleed * 2;
   const lensFilterX = lensX + filterBleed;
   const lensFilterY = lensY + filterBleed;
-  const filterVersion = getGlassFilterVersion({
+  const primitiveVersion = getGlassFilterPrimitiveVersion({
     blur: lens.blur,
     chroma: lens.chroma,
-    sourceWidth,
-    sourceHeight,
-    lensWidth: lens.width,
-    lensHeight: lens.height,
     radius: lens.radius,
     mapSize: lens.mapSize,
     scaleX: lens.scaleX,
@@ -170,9 +192,47 @@ export function GlassNode({
     splay: lens.splay,
     glow: lens.glow,
     edge: lens.edge,
+    maxSlope: lens.maxSlope,
   });
-  const filterId = `lg-glass-node-filter-${sanitizeId(id)}${safariRefresh ? `-${filterVersion}-${readyVersion}` : ""}`;
-  const lensMapKey = mapKey(lens);
+  // Port of the controller's Safari id-cycling rule (controller.ts): cycle
+  // the filter id only on primitive-only changes. Region-attribute changes
+  // (resizes, moves) invalidate the filter on their own in WebKit, so a
+  // continuous morph no longer remounts the <filter> subtree every tick.
+  // Unlike the controller's single apply pass, React commits the region
+  // change one render before the map URL that follows it, so a "dirty since
+  // the last primitive change" flag stands in for "changed together".
+  // Comparison-guarded render-phase ref updates (StrictMode-safe).
+  const primitiveKey = `${primitiveVersion}|${mapUrl}`;
+  const regionKey = [filterWidth, filterHeight, lens.width, lens.height, lensFilterX, lensFilterY].join("|");
+  const idStateRef = useRef({ primitiveKey, regionKey, regionDirty: false, counter: 0 });
+  const idState = idStateRef.current;
+  if (regionKey !== idState.regionKey) {
+    idState.regionKey = regionKey;
+    idState.regionDirty = true;
+  }
+  if (primitiveKey !== idState.primitiveKey) {
+    if (!idState.regionDirty) idState.counter += 1;
+    idState.primitiveKey = primitiveKey;
+    idState.regionDirty = false;
+  }
+  const filterId = `lg-glass-node-filter-${sanitizeId(id)}${safariRefresh ? `-${idState.counter}-${readyVersion}` : ""}`;
+  const lensMapKey = mapKey(mapLens);
+  // No-fold guard for the SVG path (see engine/map-slope.ts). Until the map
+  // slope is measured the filter is neutral anyway (no map href), so the
+  // unclamped scales are safe placeholders.
+  const svgScales = mapSlopeInfo
+    ? clampScalesForMap({
+        texelSlope: mapSlopeInfo.slope,
+        mapWidth: mapSlopeInfo.mapWidth,
+        mapHeight: mapSlopeInfo.mapHeight,
+        spanWidth: lens.width,
+        spanHeight: lens.height,
+        scaleX: lens.scaleX,
+        scaleY: lens.scaleY,
+        chroma: lens.chroma,
+        maxSlope: lens.maxSlope,
+      })
+    : { scaleX: lens.scaleX, scaleY: lens.scaleY };
 
   useEffect(() => {
     ensureLiquidGlassStyles();
@@ -199,9 +259,18 @@ export function GlassNode({
     if (!gateActive) return;
     if (!canRender || activeRenderer !== "svg" || typeof document === "undefined") {
       setMapUrl("");
+      setMapSlopeInfo(null);
       return;
     }
-    setMapUrl(getCachedDisplacementMapPngUrl(engine, lens));
+    setMapUrl(getCachedDisplacementMapPngUrl(engine, mapLens));
+    // Cache hit (the PNG encode above already generated the map); the slope
+    // itself is memoized by map identity.
+    const map = getCachedDisplacementMap(engine, mapLens);
+    setMapSlopeInfo({
+      slope: computeLensMapTexelSlope(map, mapLens),
+      mapWidth: map.width,
+      mapHeight: map.height,
+    });
     countGlassDraw("svg");
   }, [activeRenderer, canRender, engine, gateActive, lensMapKey, readyVersion]);
 
@@ -264,6 +333,7 @@ export function GlassNode({
         sceneCanvas: entry.sceneCanvas,
         engine,
         lens,
+        mapLens: mapLens === lens ? undefined : mapLens,
         sourceWidth,
         sourceHeight,
         lensX,
@@ -295,6 +365,7 @@ export function GlassNode({
       canvas,
       engine,
       lens,
+      mapLens: mapLens === lens ? undefined : mapLens,
       sourceWidth,
       sourceHeight,
       lensX,
@@ -309,6 +380,7 @@ export function GlassNode({
     sourceContentKey,
     engine,
     lens,
+    mapLens,
     lensX,
     lensY,
     sourceHeight,
@@ -331,6 +403,8 @@ export function GlassNode({
             lensFilterX={lensFilterX}
             lensFilterY={lensFilterY}
             mapUrl={mapUrl}
+            scaleX={svgScales.scaleX}
+            scaleY={svgScales.scaleY}
           />
           <span
             aria-hidden="true"
@@ -405,6 +479,8 @@ function LocalSvgFilter({
   lensFilterX,
   lensFilterY,
   mapUrl,
+  scaleX,
+  scaleY,
 }: {
   filterHeight: number;
   filterId: string;
@@ -413,8 +489,11 @@ function LocalSvgFilter({
   lensFilterX: number;
   lensFilterY: number;
   mapUrl: string;
+  /** Effective (no-fold-clamped) displacement scales. */
+  scaleX: number;
+  scaleY: number;
 }): ReactElement {
-  const baseScale = Math.max(lens.scaleX, lens.scaleY);
+  const baseScale = Math.max(scaleX, scaleY);
   const specStrength = Math.max(0, Math.min(3, lens.glow + lens.edge));
 
   return (
@@ -445,7 +524,7 @@ function LocalSvgFilter({
             in="map"
             result="scaledMap"
             type="matrix"
-            values={colorMatrixStringForScale(lens.scaleX, lens.scaleY)}
+            values={colorMatrixStringForScale(scaleX, scaleY)}
           />
           <feGaussianBlur
             in="SourceGraphic"

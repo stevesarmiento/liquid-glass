@@ -21,6 +21,8 @@ const counters = {
   blurCacheHits: 0,
   blurCacheMisses: 0,
   mapsGeneratedOutsideCache: 0,
+  mapTransientHolds: 0,
+  mapSettleRebuilds: 0,
   webglContextsCreated: 0,
   webglContextsDestroyed: 0,
 };
@@ -43,6 +45,16 @@ export function countMapGeneratedOutsideCache(): void {
   counters.mapsGeneratedOutsideCache += 1;
 }
 
+/** Renders served with a transiently quantized map lens (resize bursts). */
+export function countMapTransientHold(): void {
+  counters.mapTransientHolds += 1;
+}
+
+/** Settle-timer regenerations back to the exact lens size after a burst. */
+export function countMapSettleRebuild(): void {
+  counters.mapSettleRebuilds += 1;
+}
+
 export function glassWebglContextCreated(): void {
   counters.webglContextsCreated += 1;
 }
@@ -62,6 +74,10 @@ export interface GlassPerfSnapshot {
     generatedOutsideCache: number;
     urlCacheHits: number;
     urlCacheMisses: number;
+    /** Renders served with a transiently quantized map lens (resize bursts). */
+    transientHolds: number;
+    /** Settle regenerations back to the exact lens size after a burst. */
+    settleRebuilds: number;
   };
   blur: { cacheHits: number; cacheMisses: number };
   webglContexts: { created: number; destroyed: number; active: number };
@@ -85,6 +101,8 @@ export function getGlassPerfSnapshot(): GlassPerfSnapshot {
       generatedOutsideCache: counters.mapsGeneratedOutsideCache,
       urlCacheHits: urlStats.hits,
       urlCacheMisses: urlStats.misses,
+      transientHolds: counters.mapTransientHolds,
+      settleRebuilds: counters.mapSettleRebuilds,
     },
     blur: { cacheHits: counters.blurCacheHits, cacheMisses: counters.blurCacheMisses },
     webglContexts: {
@@ -104,6 +122,8 @@ export function resetGlassPerfCounters(): void {
   counters.blurCacheHits = 0;
   counters.blurCacheMisses = 0;
   counters.mapsGeneratedOutsideCache = 0;
+  counters.mapTransientHolds = 0;
+  counters.mapSettleRebuilds = 0;
   // Context counters are a live gauge; resetting them would corrupt `active`.
 }
 

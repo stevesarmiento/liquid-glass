@@ -16,6 +16,9 @@ export const DEFAULT_LENS_PARAMS: ResolvedLensParams = {
   glowExponent: 1.5,
   edgeExponent: 1.2,
   specularRotation: 45,
+  // Just above the defaults preset's own measured peak slope (~1.29 on the
+  // short axis) so the reference look is untouched; see LensParams.maxSlope.
+  maxSlope: 1.4,
   blur: 2.4,
   mapSize: 256,
 };
@@ -45,6 +48,7 @@ export function normalizeLensParams(input: Partial<LensParams> = {}): ResolvedLe
       -360,
       360,
     ),
+    maxSlope: clamp(finiteOr(input.maxSlope, DEFAULT_LENS_PARAMS.maxSlope), 0.05, 100),
     blur: clamp(finiteOr(input.blur, DEFAULT_LENS_PARAMS.blur), 0, 128),
     mapSize: clamp(Math.round(input.mapSize ?? DEFAULT_LENS_PARAMS.mapSize), 8, 2048),
   };
@@ -68,6 +72,35 @@ export function autoMapSize(width: number, height: number, pixelRatio = 1): numb
 
 function ceilPow2(value: number): number {
   return 2 ** Math.ceil(Math.log2(Math.max(1, value)));
+}
+
+/** Grid density for `quantizeLensSizeUp`: 4 steps per octave ≈ 19% buckets. */
+export const QUANT_STEPS_PER_OCTAVE = 4;
+
+/**
+ * Snaps a lens dimension UP to a geometric grid (2^(k/stepsPerOctave), ~19%
+ * steps at the default density). Used to bound the number of distinct map
+ * cache keys a continuous resize can produce: during a burst the map is
+ * generated at the quantized size and stretched over the exact box, so a
+ * 168→460px morph crosses ≤7 buckets instead of ~300 exact sizes — and a
+ * repeat morph between the same endpoints crosses 0 new ones. Rounding up
+ * (never down) guarantees the quantized map's radius is never clamped
+ * tighter than the real lens (`normalizeLensParams` caps radius at
+ * min(w,h)/2). Idempotent on grid points.
+ */
+export function quantizeLensSizeUp(value: number, stepsPerOctave = QUANT_STEPS_PER_OCTAVE): number {
+  const v = Math.max(1, Math.ceil(value));
+  const steps = Math.max(1, Math.round(stepsPerOctave));
+  // Smallest integer grid point round(2^(k/steps)) >= v. Searching (instead
+  // of solving for k directly) keeps the function idempotent despite the
+  // integer rounding of grid points.
+  let k = Math.floor(Math.log2(v) * steps);
+  let grid = Math.round(2 ** (k / steps));
+  while (grid < v) {
+    k += 1;
+    grid = Math.round(2 ** (k / steps));
+  }
+  return grid;
 }
 
 export function clamp(value: number, min: number, max: number): number {

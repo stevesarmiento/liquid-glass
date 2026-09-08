@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getGlassFilterBleed, getGlassFilterVersion } from "./filter-version";
+import {
+  getGlassFilterBleed,
+  getGlassFilterPrimitiveVersion,
+  getGlassFilterVersion,
+} from "./filter-version";
 
 describe("glass filter utilities", () => {
   it("computes bleed from max displacement, chroma, blur, and padding", () => {
@@ -27,7 +31,56 @@ describe("glass filter utilities", () => {
         sourceWidth: 244,
         splay: 0.49,
       }),
-    ).toBe("244-44-63-34-8000-256-3800-4000-500-25-350-0-490-500-750");
+    ).toBe("244-44-63-34-8000-256-3800-4000-500-25-350-0-490-500-750-0");
+  });
+
+  it("folds maxSlope into the version key", () => {
+    const base = {
+      blur: 0.25,
+      chroma: 0.5,
+      depth: 3.5,
+      dome: 0,
+      edge: 0.75,
+      glow: 0.5,
+      lensHeight: 34,
+      lensWidth: 63,
+      mapSize: 256,
+      radius: 80,
+      scaleX: 38,
+      scaleY: 40,
+      sourceHeight: 44,
+      sourceWidth: 244,
+      splay: 0.49,
+    };
+    expect(getGlassFilterVersion({ ...base, maxSlope: 0.95 })).toBe(
+      "244-44-63-34-8000-256-3800-4000-500-25-350-0-490-500-750-95",
+    );
+    expect(getGlassFilterVersion({ ...base, maxSlope: 0.95 })).not.toBe(
+      getGlassFilterVersion({ ...base, maxSlope: 2 }),
+    );
+  });
+
+  it("primitive version carries no size terms but is sensitive to optics", () => {
+    const optics = {
+      blur: 0.25,
+      chroma: 0.5,
+      depth: 3.5,
+      dome: 0,
+      edge: 0.75,
+      glow: 0.5,
+      mapSize: 256,
+      radius: 80,
+      scaleX: 38,
+      scaleY: 40,
+      splay: 0.49,
+      maxSlope: 0.95,
+    };
+    expect(getGlassFilterPrimitiveVersion(optics)).toBe(
+      "8000-256-3800-4000-500-25-350-0-490-500-750-95",
+    );
+    expect(getGlassFilterPrimitiveVersion(optics)).not.toBe(
+      getGlassFilterPrimitiveVersion({ ...optics, scaleX: 39 }),
+    );
   });
 });
 

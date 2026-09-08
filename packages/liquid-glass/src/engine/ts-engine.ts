@@ -190,6 +190,10 @@ export function targetBleed(params: LensParams): number {
   );
 }
 
+// scaleX/scaleY/chroma/blur are render-time attributes (feDisplacementMap
+// scale / feColorMatrix / uniforms) and deliberately excluded so press tweens
+// stay cacheable. maxSlope is also excluded: it never affects the map bytes —
+// it only caps the effective render-time scale (see engine/map-slope.ts).
 export function mapKey(params: LensParams): string {
   return [
     params.width,

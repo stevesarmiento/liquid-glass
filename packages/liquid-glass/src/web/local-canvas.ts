@@ -1,6 +1,7 @@
 import { normalizeLensParams } from "../engine/defaults";
 import { createLiquidGlassEngine } from "../engine/create-engine";
 import { getCachedDisplacementMap } from "../engine/map-cache";
+import { clampLensScales } from "../engine/map-slope";
 import type { LensParams, LiquidGlassEngine } from "../engine/types";
 import { countGlassDraw } from "./perf-stats";
 import {
@@ -35,6 +36,12 @@ export interface LocalGlassCanvasRenderInput {
   canvas: HTMLCanvasElement;
   engine?: LiquidGlassEngine;
   lens: Partial<LensParams>;
+  /**
+   * Lens to resolve the displacement map with, when it differs from `lens`
+   * (e.g. a transiently quantized size during a resize burst — see
+   * useTransientMapLens). Output geometry always comes from `lens`.
+   */
+  mapLens?: Partial<LensParams>;
   sourceWidth: number;
   sourceHeight: number;
   lensX: number;
@@ -100,8 +107,16 @@ export function renderLocalGlassCanvas(input: LocalGlassCanvasRenderInput): Loca
   applyCanvasBlur(blurredCtx, sourceWidth, sourceHeight, lens.blur, pixelRatio);
 
   const mapStarted = performance.now();
-  const map = getCachedDisplacementMap(engine, lens);
+  const mapLens = input.mapLens ? normalizeLensParams(input.mapLens) : lens;
+  const map = getCachedDisplacementMap(engine, mapLens);
   const mapMs = performance.now() - mapStarted;
+  // No-fold guard (see engine/map-slope.ts): same clamp as the WebGL sink.
+  const strength = input.strength ?? CANVAS_STRENGTH;
+  const clamped = clampLensScales(map, lens, { strength, generatingLens: mapLens });
+  const sampleLens =
+    clamped.scaleX !== lens.scaleX || clamped.scaleY !== lens.scaleY
+      ? { ...lens, scaleX: clamped.scaleX, scaleY: clamped.scaleY }
+      : lens;
   const scenePixels = blurredCtx.getImageData(0, 0, sourceWidth, sourceHeight);
   const output = ctx.createImageData(lensWidth, lensHeight);
   const out = output.data;
@@ -122,7 +137,7 @@ export function renderLocalGlassCanvas(input: LocalGlassCanvasRenderInput): Loca
         sourceWidth,
         sourceHeight,
         map,
-        lens,
+        lens: sampleLens,
         lensWidth: lens.width,
         lensHeight: lens.height,
         lensX: input.lensX,
@@ -130,7 +145,7 @@ export function renderLocalGlassCanvas(input: LocalGlassCanvasRenderInput): Loca
         localX: cssX,
         localY: cssY,
         pixelRatio,
-        strength: input.strength ?? CANVAS_STRENGTH,
+        strength,
       };
 
       out[index] = sampleGlassChannel(sampleInput, 0);

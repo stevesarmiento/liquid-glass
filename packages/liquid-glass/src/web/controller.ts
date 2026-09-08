@@ -6,6 +6,7 @@ import {
   generateMergedDisplacementMap,
   mergedMapKey,
 } from "../engine/merged";
+import { clampLensScales, clampMergedScales } from "../engine/map-slope";
 import { colorMatrixStringForScale, mapKey, targetBleed } from "../engine/ts-engine";
 import type {
   DisplacementMap,
@@ -460,6 +461,10 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
           geometry.radius,
           containerRect.width,
           containerRect.height,
+          lens.scaleX,
+          lens.scaleY,
+          lens.chroma,
+          lens.maxSlope,
         ].join("|");
         if (drawKey !== lastWebglDrawKey) {
           webglRenderer.render({
@@ -505,6 +510,10 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
           geometry.radius,
           containerRect.width,
           containerRect.height,
+          lens.scaleX,
+          lens.scaleY,
+          lens.chroma,
+          lens.maxSlope,
         ].join("|");
         if (drawKey !== lastCanvasDrawKey) {
           canvasRenderer.draw({
@@ -556,10 +565,11 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
       lens.chroma,
       lens.glow,
       lens.edge,
+      lens.maxSlope,
     ].join("|");
     let geometryWrites = { primitiveWrites: 0, regionWrites: 0 };
     if (svgGeometryKey !== lastSvgGeometryKey) {
-      geometryWrites = updateSvgGeometry(elements, geometry, lens);
+      geometryWrites = updateSvgGeometry(elements, geometry, lens, lastMap);
       lastSvgGeometryKey = svgGeometryKey;
     }
     primitiveWrites += geometryWrites.primitiveWrites;
@@ -1048,7 +1058,11 @@ function updateSvgGeometry(
   elements: SvgFilterElements,
   geometry: LensGeometry,
   lens: LensParams,
+  map: DisplacementMap | null,
 ): SvgGeometryWrites {
+  // No-fold guard: soft-limit the effective displacement scales so the map's
+  // measured slope never folds the backdrop (exact no-op below the cap).
+  const { scaleX, scaleY } = map ? clampLensScales(map, lens) : lens;
   let regionWrites = 0;
   regionWrites += Number(setAttr(elements.filter, "x", geometry.filterX));
   regionWrites += Number(setAttr(elements.filter, "y", geometry.filterY));
@@ -1060,10 +1074,10 @@ function updateSvgGeometry(
   primitiveWrites += Number(setAttr(elements.mapImage, "width", geometry.width));
   primitiveWrites += Number(setAttr(elements.mapImage, "height", geometry.height));
   primitiveWrites += Number(
-    setAttr(elements.mapMatrix, "values", colorMatrixStringForScale(lens.scaleX, lens.scaleY)),
+    setAttr(elements.mapMatrix, "values", colorMatrixStringForScale(scaleX, scaleY)),
   );
   primitiveWrites += Number(setAttr(elements.sourceBlur, "stdDeviation", String(lens.blur * 0.18)));
-  const baseScale = Math.max(lens.scaleX, lens.scaleY);
+  const baseScale = Math.max(scaleX, scaleY);
   primitiveWrites += Number(setAttr(elements.displacementR, "scale", baseScale * (1 + 0.2 * lens.chroma)));
   primitiveWrites += Number(setAttr(elements.displacementG, "scale", baseScale * (1 + 0.1 * lens.chroma)));
   primitiveWrites += Number(setAttr(elements.displacementB, "scale", baseScale));
@@ -1187,6 +1201,15 @@ function createCanvasRenderer() {
       const out = output.data;
       const mapMask = input.maskMode === "map";
       const chrome = mapMask ? input.chrome : undefined;
+      // No-fold guard (see engine/map-slope.ts): identical clamp to the SVG
+      // and WebGL sinks so all renderers stay visually consistent.
+      const clampedScales = mapMask
+        ? clampMergedScales(input.map, input.lens, input.geometry.width, input.geometry.height, CANVAS_STRENGTH)
+        : clampLensScales(input.map, input.lens, { strength: CANVAS_STRENGTH });
+      const sampleLens =
+        clampedScales.scaleX !== input.lens.scaleX || clampedScales.scaleY !== input.lens.scaleY
+          ? { ...input.lens, scaleX: clampedScales.scaleX, scaleY: clampedScales.scaleY }
+          : input.lens;
       const shadowColor = chrome?.shadowColor;
       const hasShadow = Boolean(shadowColor && shadowColor[3] > 0);
       const shadowOffsetX = chrome?.shadowOffset?.[0] ?? 0;
@@ -1273,7 +1296,7 @@ function createCanvasRenderer() {
             sourceWidth: width,
             sourceHeight: height,
             map: input.map,
-            lens: input.lens,
+            lens: sampleLens,
             lensWidth: input.geometry.width,
             lensHeight: input.geometry.height,
             lensX: input.geometry.left,

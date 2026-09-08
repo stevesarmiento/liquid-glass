@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  clearDisplacementMapCache,
+  getCachedDisplacementMap,
+  getDisplacementMapCacheStats,
+} from "../engine/map-cache";
 import { createTsLiquidGlassEngine } from "../engine/ts-engine";
 import { renderLocalGlassCanvas } from "./local-canvas";
 import { boxBlurRgba } from "./render-utils";
@@ -90,6 +95,33 @@ describe("renderLocalGlassCanvas", () => {
     });
 
     expect(lastImageData?.data[3]).toBe(0);
+  });
+
+  it("resolves the displacement map from mapLens when provided", () => {
+    clearDisplacementMapCache();
+    const engine = createTsLiquidGlassEngine();
+    const canvas = document.createElement("canvas");
+    const mapLens = { width: 16, height: 16, radius: 4, mapSize: 16 };
+    renderLocalGlassCanvas({
+      canvas,
+      engine,
+      lens: { width: 8, height: 8, radius: 4, mapSize: 16 },
+      mapLens,
+      lensX: 0,
+      lensY: 0,
+      pixelRatio: 1,
+      source: ({ ctx }) => ctx.fillRect(0, 0, 16, 16),
+      sourceHeight: 16,
+      sourceWidth: 16,
+    });
+    const generated = getDisplacementMapCacheStats().generated;
+    expect(generated).toBe(1);
+
+    // The quantized map (not the exact lens's) is what got cached.
+    getCachedDisplacementMap(engine, mapLens);
+    expect(getDisplacementMapCacheStats().generated).toBe(generated);
+    expect(getDisplacementMapCacheStats().hits).toBeGreaterThan(0);
+    clearDisplacementMapCache();
   });
 
   it("can blur pixels without relying on canvas context filters", () => {

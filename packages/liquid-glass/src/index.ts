@@ -1,4 +1,10 @@
-export { DEFAULT_LENS_PARAMS, autoMapSize, normalizeLensParams } from "./engine/defaults";
+export {
+  DEFAULT_LENS_PARAMS,
+  QUANT_STEPS_PER_OCTAVE,
+  autoMapSize,
+  normalizeLensParams,
+  quantizeLensSizeUp,
+} from "./engine/defaults";
 export { createLiquidGlassEngine, getSharedLiquidGlassEngine } from "./engine/create-engine";
 export {
   clearDisplacementMapCache,
@@ -11,8 +17,10 @@ export {
 } from "./engine/map-cache";
 export {
   clearMapUrlCache,
+  configureMapUrlCache,
   getCachedDisplacementMapPngUrl,
   getMapUrlCacheStats,
+  type MapUrlCacheOptions,
   type MapUrlCacheStats,
 } from "./web/map-url-cache";
 export {
@@ -51,12 +59,27 @@ export {
   generateMergedDisplacementMap,
   mergedMapKey,
 } from "./engine/merged";
+export {
+  clampLensScales,
+  clampMergedScales,
+  clampScalesForMap,
+  computeLensMapTexelSlope,
+  computeMergedMapTexelSlope,
+  type ClampLensScalesOptions,
+  type ClampScalesInput,
+  type ClampedScales,
+  type MapTexelSlope,
+} from "./engine/map-slope";
 export { PARITY_TOLERANCE, compareEngineOutput, compareMapBytes } from "./engine/parity";
 export type { ParityResult } from "./engine/parity";
 // Pure material-physics utilities (no DOM, no React) shared with the
 // material-behavior hooks in liquid-glass/react.
 export { createSpring, rubberband, type Spring, type SpringConfig } from "./react/material/spring";
-export { getGlassFilterBleed, getGlassFilterVersion } from "./web/filter-version";
+export {
+  getGlassFilterBleed,
+  getGlassFilterPrimitiveVersion,
+  getGlassFilterVersion,
+} from "./web/filter-version";
 export { isSafari } from "./web/is-safari";
 export { renderLocalGlassCanvas } from "./web/local-canvas";
 export {

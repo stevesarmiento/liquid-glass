@@ -2,7 +2,9 @@ import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { clearDisplacementMapCache, getDisplacementMapCacheStats } from "../engine/map-cache";
 import { resetSharedGlassCompositorForTests } from "../web/glass-compositor";
+import { clearMapUrlCache } from "../web/map-url-cache";
 import { createStubGl } from "../web/test-stub-gl";
 import { GlassNode } from "./GlassNode";
 import { GlassSurface } from "./GlassSurface";
@@ -119,6 +121,104 @@ describe("glass React primitives", () => {
     );
     expect(arithmeticComposites.length).toBeGreaterThanOrEqual(2);
     act(() => root.unmount());
+  });
+
+  it("bounds map generation during a resize burst on the SVG path", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Chrome/125.0");
+    vi.useFakeTimers();
+    try {
+      clearDisplacementMapCache();
+      clearMapUrlCache();
+      const host = document.createElement("div");
+      document.body.append(host);
+      const root = createRoot(host);
+      const renderNode = (width: number) =>
+        act(() => {
+          root.render(
+            <GlassNode
+              engineMode="ts"
+              lens={{ width, height: 40, radius: 8, mapSize: 32 }}
+              lensX={0}
+              lensY={0}
+              sourceChildren={<span>source</span>}
+              sourceHeight={40}
+              sourceWidth={200}
+            />,
+          );
+        });
+
+      renderNode(100);
+      const base = getDisplacementMapCacheStats().generated;
+      // 30 resize ticks: without quantization each would be a cache miss.
+      for (let width = 101; width <= 130; width += 1) renderNode(width);
+      // First change exact (1) + a handful of quantized buckets.
+      expect(getDisplacementMapCacheStats().generated - base).toBeLessThanOrEqual(6);
+      // The feImage rect always keeps the EXACT lens size (the quantized map
+      // stretches over it via preserveAspectRatio="none").
+      expect(host.querySelector("feImage")?.getAttribute("width")).toBe("130");
+
+      // Settle: exactly one final exact-size regeneration.
+      const beforeSettle = getDisplacementMapCacheStats().generated;
+      await act(async () => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(getDisplacementMapCacheStats().generated - beforeSettle).toBeLessThanOrEqual(1);
+      act(() => root.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the filter id stable across size changes and bumps once after settle", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Chrome/125.0");
+    // Distinct data URLs per encode so mapUrl actually changes across maps.
+    let encodeCount = 0;
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockImplementation(
+      () => `data:image/png;base64,${(encodeCount += 1)}`,
+    );
+    vi.useFakeTimers();
+    try {
+      clearDisplacementMapCache();
+      clearMapUrlCache();
+      const host = document.createElement("div");
+      document.body.append(host);
+      const root = createRoot(host);
+      const renderNode = (width: number) =>
+        act(() => {
+          root.render(
+            <GlassNode
+              engineMode="ts"
+              lens={{ width, height: 40, radius: 8, mapSize: 32 }}
+              lensX={0}
+              lensY={0}
+              sourceChildren={<span>source</span>}
+              sourceHeight={40}
+              sourceWidth={200}
+            />,
+          );
+        });
+
+      await act(async () => renderNode(100));
+      const idAfterMount = host.querySelector("filter")?.id ?? "";
+      expect(idAfterMount).not.toBe("");
+
+      // Size changes rewrite region attributes; the id must not churn.
+      await act(async () => renderNode(110));
+      await act(async () => renderNode(120));
+      expect(host.querySelector("filter")?.id).toBe(idAfterMount);
+
+      // Settle regen swaps the map with a static region: exactly one bump.
+      await act(async () => {
+        vi.advanceTimersByTime(300);
+      });
+      const idAfterSettle = host.querySelector("filter")?.id ?? "";
+      expect(idAfterSettle).not.toBe(idAfterMount);
+      const counterOf = (id: string) => Number(/-(\d+)-\d+$/.exec(id)?.[1] ?? NaN);
+      expect(counterOf(idAfterSettle)).toBe(counterOf(idAfterMount) + 1);
+      act(() => root.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("injects the stylesheet exactly once on mount", () => {

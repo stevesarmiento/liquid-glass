@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { normalizeLensParams } from "../engine/defaults";
 import { MERGED_ALPHA_DISTANCE_RANGE } from "../engine/merged";
 import { createTsLiquidGlassEngine } from "../engine/ts-engine";
 import { createLiquidGlassController } from "./controller";
@@ -99,6 +100,43 @@ describe("LiquidGlassController", () => {
     flushFrame();
 
     expect(controller.stats.domWrites - writes).toBe(0);
+    controller.destroy();
+  });
+
+  it("writes unclamped displacement scales at default optics (no-fold clamp is a no-op)", () => {
+    const { container, source } = createFixture();
+    const controller = createLiquidGlassController({
+      container,
+      source,
+      engine: createTsLiquidGlassEngine(),
+    });
+
+    const lens = normalizeLensParams();
+    const baseScale = Math.max(lens.scaleX, lens.scaleY);
+    const [dispR, dispG, dispB] = Array.from(container.querySelectorAll("feDisplacementMap"));
+    // String-identical to the pre-clamp behavior — the reference look.
+    expect(dispR?.getAttribute("scale")).toBe(String(baseScale * (1 + 0.2 * lens.chroma)));
+    expect(dispG?.getAttribute("scale")).toBe(String(baseScale * (1 + 0.1 * lens.chroma)));
+    expect(dispB?.getAttribute("scale")).toBe(String(baseScale));
+    controller.destroy();
+  });
+
+  it("writes reduced displacement scales for a folding lens (no-fold clamp)", () => {
+    const { container, source } = createFixture();
+    const lensInput = { depth: 4, maxSlope: 0.95 };
+    const controller = createLiquidGlassController({
+      container,
+      source,
+      lens: lensInput,
+      engine: createTsLiquidGlassEngine(),
+    });
+
+    const lens = normalizeLensParams(lensInput);
+    const unclamped = Math.max(lens.scaleX, lens.scaleY) * (1 + 0.2 * lens.chroma);
+    const dispR = container.querySelector("feDisplacementMap");
+    const written = Number(dispR?.getAttribute("scale"));
+    expect(written).toBeGreaterThan(0);
+    expect(written).toBeLessThan(unclamped);
     controller.destroy();
   });
 

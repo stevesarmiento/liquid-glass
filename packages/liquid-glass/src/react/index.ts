@@ -49,6 +49,7 @@ export {
 export { glassTokens, type GlassTokens } from "./tokens";
 export { useElementSize } from "./useElementSize";
 export { useGlassQualityLevel } from "./useGlassQualityLevel";
+export { DEFAULT_RESIZE_SETTLE_MS, useTransientMapLens } from "./useTransientMapLens";
 export { useIsSafari } from "./useIsSafari";
 export { usePrefersReducedTransparency } from "./usePrefersReducedTransparency";
 export { useRenderGate } from "./useRenderGate";

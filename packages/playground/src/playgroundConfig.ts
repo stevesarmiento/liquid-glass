@@ -19,7 +19,7 @@ import {
 
 export const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
   ["width", "height", "radius", "mapSize"],
-  ["scaleX", "scaleY", "chroma", "blur"],
+  ["scaleX", "scaleY", "chroma", "blur", "maxSlope"],
   ["depth", "dome", "splay", "glow", "edge", "glowSpread", "glowExponent", "edgeExponent", "specularRotation"],
 ];
 
@@ -39,6 +39,9 @@ export const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number
   glowExponent: { min: 0.1, max: 8, step: 0.05 },
   edgeExponent: { min: 0.1, max: 8, step: 0.05 },
   specularRotation: { min: -360, max: 360, step: 1 },
+  // Lower toward ~1 for fold-free physics; high values keep the heavily
+  // folded "liquid" edge look presets like INITIAL_LENS were tuned with.
+  maxSlope: { min: 0.05, max: 16, step: 0.05 },
   blur: { min: 0, max: 12, step: 0.1 },
   mapSize: { min: 32, max: 1024, step: 32 },
 };
@@ -86,6 +89,9 @@ export const INITIAL_LENS: ResolvedLensParams = {
   glowExponent: 1.5,
   edgeExponent: 1.2,
   specularRotation: -80,
+  // This preset's edge look was tuned WITH heavy folding (rendered slope
+  // ~10); keep the cap above it so the no-fold guard stays a no-op here.
+  maxSlope: 16,
   blur: 1.3,
   mapSize: 1024,
 };

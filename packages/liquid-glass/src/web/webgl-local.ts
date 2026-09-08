@@ -20,6 +20,13 @@ export interface LocalGlassWebglRenderInput {
   sceneCanvas: HTMLCanvasElement;
   engine?: LiquidGlassEngine;
   lens: Partial<LensParams>;
+  /**
+   * Lens to resolve the displacement map with, when it differs from `lens`
+   * (e.g. a transiently quantized size during a resize burst — see
+   * useTransientMapLens). Geometry/viewport always come from `lens`; the map
+   * stretches over the exact box in normalized lens space.
+   */
+  mapLens?: Partial<LensParams>;
   sourceWidth: number;
   sourceHeight: number;
   lensX: number;
@@ -100,7 +107,8 @@ export function buildLocalGlassDrawInput(spec: LocalGlassDrawSpec): LocalGlassDr
     else lastSceneContent.delete(spec.sceneCanvas);
   }
 
-  const map = getCachedDisplacementMap(engine, lens);
+  const mapLens = spec.mapLens ? normalizeLensParams(spec.mapLens) : lens;
+  const map = getCachedDisplacementMap(engine, mapLens);
 
   return {
     input: {
@@ -110,6 +118,7 @@ export function buildLocalGlassDrawInput(spec: LocalGlassDrawSpec): LocalGlassDr
       sceneKey: spec.sceneKey,
       map,
       lens,
+      mapLens: mapLens !== lens ? mapLens : undefined,
       geometry: {
         left: spec.lensX,
         top: spec.lensY,
