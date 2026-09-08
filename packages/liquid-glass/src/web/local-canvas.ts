@@ -49,6 +49,13 @@ export interface LocalGlassCanvasRenderInput {
   pixelRatio?: number;
   source: GlassCanvasSource;
   strength?: number;
+  /**
+   * Uniform zoom applied to the drawn source about the LENS CENTER before
+   * blur/displacement. < 1 zooms out (a literal minified view) so the
+   * displacement field only has to carry edge character, not the
+   * minification itself. Default 1.
+   */
+  sourceZoom?: number;
 }
 
 export interface LocalGlassCanvasRenderResult {
@@ -88,6 +95,14 @@ export function renderLocalGlassCanvas(input: LocalGlassCanvasRenderInput): Loca
   sourceCtx.clearRect(0, 0, sourceWidth, sourceHeight);
   sourceCtx.save();
   sourceCtx.scale(pixelRatio, pixelRatio);
+  const sourceZoom = input.sourceZoom ?? 1;
+  if (sourceZoom !== 1) {
+    const zoomCx = input.lensX + lens.width / 2;
+    const zoomCy = input.lensY + lens.height / 2;
+    sourceCtx.translate(zoomCx, zoomCy);
+    sourceCtx.scale(sourceZoom, sourceZoom);
+    sourceCtx.translate(-zoomCx, -zoomCy);
+  }
   input.source({
     ctx: sourceCtx,
     metrics: {

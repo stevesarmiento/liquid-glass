@@ -128,7 +128,15 @@ export function computeLensGeometry(input: GeometryInput): LensGeometry {
   const left = centerX - lens.width / 2;
   const top = centerY - lens.height / 2;
   const isTarget = input.mode === "target";
-  const bleed = isTarget ? targetBleed(lens) : 0;
+  // Bleed quantized UP to 64px steps FOR THE FILTER REGION ONLY: a scale/blur
+  // drag would otherwise resize the SVG filter region every tick,
+  // invalidating the browser's rasterized filter inputs (including the
+  // mapSize-sized feImage decode) 30x/second — enough churn to silently
+  // wedge Chrome's filter into rendering black. A stable region across most
+  // of a drag keeps those caches alive; the extra margin is invisible
+  // padding. The merged (goo) path uses the exact targetBleed — its region
+  // sizes per-frame map generation, where a fat margin is a real cost.
+  const bleed = isTarget ? Math.ceil(targetBleed(lens) / 64) * 64 : 0;
   const filterX = isTarget ? Math.max(0, left - bleed) : 0;
   const filterY = isTarget ? Math.max(0, top - bleed) : 0;
   const filterRight = isTarget ? Math.min(containerWidth, left + lens.width + bleed) : containerWidth;
@@ -151,7 +159,10 @@ export function computeLensGeometry(input: GeometryInput): LensGeometry {
 }
 
 export function colorMatrixForScale(scaleX: number, scaleY: number): number[] {
-  const base = Math.max(scaleX, scaleY);
+  // Base is a magnitude (feDisplacementMap scale must stay positive); the
+  // SIGN lives in the ratios — a negative ratio mirrors the channel around
+  // 0.5, flipping that axis's sample direction (demagnify).
+  const base = Math.max(Math.abs(scaleX), Math.abs(scaleY));
   const rx = base > 0 ? scaleX / base : 0;
   const ry = base > 0 ? scaleY / base : 0;
 
@@ -186,7 +197,9 @@ export function colorMatrixStringForScale(scaleX: number, scaleY: number): strin
 export function targetBleed(params: LensParams): number {
   // 3 sigma of Gaussian blur so the filter region fully covers the blur tail.
   return Math.ceil(
-    Math.max(params.scaleX, params.scaleY) * (1 + 0.2 * params.chroma) + params.blur * 3 + 4,
+    Math.max(Math.abs(params.scaleX), Math.abs(params.scaleY)) * (1 + 0.2 * params.chroma) +
+      params.blur * 3 +
+      4,
   );
 }
 

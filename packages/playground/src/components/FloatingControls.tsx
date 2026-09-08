@@ -1,17 +1,27 @@
-import { type CSSProperties, type PointerEvent, type RefObject } from "react";
+import { useState, useSyncExternalStore, type CSSProperties, type PointerEvent, type RefObject } from "react";
 import { resolveGlassTint, type GlassTintName, type LensParams, type LiquidGlassControllerStats, type LiquidGlassEngineMode, type ResolvedLensParams } from "liquid-glass";
 
 import {
   CONTROL_GROUPS,
   CONTROL_LIMITS,
+  LENS_STAGE_PRESETS,
   TINT_NAMES,
   VISIBILITY_OPTIONS,
   type ComponentVisibility,
   type CustomTint,
+  type LensStagePresetId,
+  type PreviewBackground,
   type TintMode,
   type VisibilityKey,
 } from "../playgroundConfig";
-import { formatValue } from "../playgroundUtils";
+import { formatLensPresetTs, formatValue, lensEquals } from "../playgroundUtils";
+import {
+  buildDebugReport,
+  captureManualIncident,
+  captureScreenCheck,
+  getDebugIncidentCount,
+  subscribeDebugIncidents,
+} from "../debugTrap";
 import type { GlassPressHighlight } from "@liquid-glass/design-system";
 
 interface FloatingControlsProps {
@@ -31,11 +41,20 @@ interface FloatingControlsProps {
   onDualLensChange: (value: boolean) => void;
   onEngineModeChange: (value: LiquidGlassEngineMode) => void;
   onLensChange: (key: keyof LensParams, value: number) => void;
+  onLensPresetSelect: (id: LensStagePresetId) => void;
   onPressHighlightChange: (value: GlassPressHighlight) => void;
   onTintModeChange: (value: TintMode) => void;
   onTintNameChange: (value: GlassTintName) => void;
+  adaptiveQuality: boolean;
+  onAdaptiveQualityChange: (value: boolean) => void;
+  onPreviewActiveChange: (value: boolean) => void;
+  onSourceZoomChange: (value: number) => void;
+  sourceZoom: number;
+  onPreviewBackgroundChange: (value: PreviewBackground) => void;
   onVisibilityChange: (key: VisibilityKey, value: boolean) => void;
   pressHighlight: GlassPressHighlight;
+  previewActive: boolean;
+  previewBackground: PreviewBackground;
   stats: LiquidGlassControllerStats | null;
   tintMode: TintMode;
   tintName: GlassTintName;
@@ -45,6 +64,7 @@ interface FloatingControlsProps {
 }
 
 export function FloatingControls({
+  adaptiveQuality,
   blend,
   controlsOpen,
   controlsPanelOpensUp,
@@ -63,11 +83,19 @@ export function FloatingControls({
   onDualLensChange,
   onEngineModeChange,
   onLensChange,
+  onAdaptiveQualityChange,
+  onLensPresetSelect,
   onPressHighlightChange,
+  onPreviewActiveChange,
+  onPreviewBackgroundChange,
+  onSourceZoomChange,
+  sourceZoom,
   onTintModeChange,
   onTintNameChange,
   onVisibilityChange,
   pressHighlight,
+  previewActive,
+  previewBackground,
   stats,
   tintMode,
   tintName,
@@ -111,13 +139,22 @@ export function FloatingControls({
       {controlsOpen && (
         <aside className="controlsPanel">
           <div className="accordionStack">
-            <RendererSection engineMode={engineMode} onEngineModeChange={onEngineModeChange} stats={stats} />
-            <VisibilitySection
+            <GlobalSection
+              adaptiveQuality={adaptiveQuality}
+              onAdaptiveQualityChange={onAdaptiveQualityChange}
+              onSourceZoomChange={onSourceZoomChange}
+              sourceZoom={sourceZoom}
+              engineMode={engineMode}
+              onEngineModeChange={onEngineModeChange}
               onPressHighlightChange={onPressHighlightChange}
-              onVisibilityChange={onVisibilityChange}
+              onPreviewActiveChange={onPreviewActiveChange}
+              onPreviewBackgroundChange={onPreviewBackgroundChange}
               pressHighlight={pressHighlight}
-              visibility={visibility}
+              previewActive={previewActive}
+              previewBackground={previewBackground}
+              stats={stats}
             />
+            <VisibilitySection onVisibilityChange={onVisibilityChange} visibility={visibility} />
             <LensesSection
               blend={blend}
               dropdownGap={dropdownGap}
@@ -135,7 +172,14 @@ export function FloatingControls({
               tintMode={tintMode}
               tintName={tintName}
             />
-            <LensSection groupIndex={0} lens={lens} onLensChange={onLensChange} open title="Lens" />
+            <LensSection
+              groupIndex={0}
+              lens={lens}
+              onLensChange={onLensChange}
+              onPresetSelect={onLensPresetSelect}
+              open
+              title="Lens"
+            />
             <LensSection groupIndex={1} lens={lens} onLensChange={onLensChange} title="Optics" />
             <LensSection groupIndex={2} lens={lens} onLensChange={onLensChange} title="Light" />
             <StatsSection stats={stats} />
@@ -146,18 +190,50 @@ export function FloatingControls({
   );
 }
 
-function RendererSection({
+/** Session-wide settings: engine, preview state/surface, press highlight. */
+function GlobalSection({
+  adaptiveQuality,
+  onAdaptiveQualityChange,
+  onSourceZoomChange,
+  sourceZoom,
   engineMode,
   onEngineModeChange,
+  onPressHighlightChange,
+  onPreviewActiveChange,
+  onPreviewBackgroundChange,
+  pressHighlight,
+  previewActive,
+  previewBackground,
   stats,
-}: Pick<FloatingControlsProps, "engineMode" | "onEngineModeChange" | "stats">) {
+}: Pick<
+  FloatingControlsProps,
+  | "adaptiveQuality"
+  | "onAdaptiveQualityChange"
+  | "onSourceZoomChange"
+  | "sourceZoom"
+  | "engineMode"
+  | "onEngineModeChange"
+  | "onPressHighlightChange"
+  | "onPreviewActiveChange"
+  | "onPreviewBackgroundChange"
+  | "pressHighlight"
+  | "previewActive"
+  | "previewBackground"
+  | "stats"
+>) {
   return (
     <details className="accordionSection" open>
       <summary>
-        <span>Renderer</span>
+        <span>Global</span>
         <b>{stats ? `${stats.activeEngine} / ${stats.activeRenderer}` : "ts / svg"}</b>
       </summary>
       <div className="accordionBody">
+        <label>
+          <span>
+            engine
+            <b>{engineMode}</b>
+          </span>
+        </label>
         <div className="segments">
           {(["auto", "wasm", "ts"] as const).map((mode) => (
             <button
@@ -170,34 +246,72 @@ function RendererSection({
             </button>
           ))}
         </div>
-      </div>
-    </details>
-  );
-}
-
-function VisibilitySection({
-  onPressHighlightChange,
-  onVisibilityChange,
-  pressHighlight,
-  visibility,
-}: Pick<FloatingControlsProps, "onPressHighlightChange" | "onVisibilityChange" | "pressHighlight" | "visibility">) {
-  return (
-    <details className="accordionSection" open>
-      <summary>
-        <span>Visible</span>
-        <b>{VISIBILITY_OPTIONS.filter(({ key }) => visibility[key]).length} on</b>
-      </summary>
-      <div className="accordionBody">
-        <div className="visibilityGrid">
-          {VISIBILITY_OPTIONS.map(({ key, label }) => (
-            <label className="visibilityToggle" key={key}>
-              <span>{label}</span>
-              <input
-                checked={visibility[key]}
-                onChange={(event) => onVisibilityChange(key, event.target.checked)}
-                type="checkbox"
-              />
-            </label>
+        <label>
+          <span>
+            adaptive quality
+            <b>{adaptiveQuality ? "on" : "off (pinned full)"}</b>
+          </span>
+        </label>
+        <div className="segments tintMode">
+          {(["off", "on"] as const).map((mode) => (
+            <button
+              key={mode}
+              className={(adaptiveQuality ? "on" : "off") === mode ? "active" : ""}
+              onClick={() => onAdaptiveQualityChange(mode === "on")}
+              type="button"
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        <label>
+          <span>
+            state
+            <b>{previewActive ? "active" : "rest"}</b>
+          </span>
+        </label>
+        <div className="segments tintMode">
+          {(["active", "rest"] as const).map((mode) => (
+            <button
+              key={mode}
+              className={(previewActive ? "active" : "rest") === mode ? "active" : ""}
+              onClick={() => onPreviewActiveChange(mode === "active")}
+              type="button"
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        <label>
+          <span>
+            source zoom
+            <b>{sourceZoom.toFixed(2)}</b>
+          </span>
+          <input
+            min={0.4}
+            max={1}
+            step={0.01}
+            type="range"
+            value={sourceZoom}
+            onChange={(event) => onSourceZoomChange(Number(event.target.value))}
+          />
+        </label>
+        <label>
+          <span>
+            preview bg
+            <b>{previewBackground}</b>
+          </span>
+        </label>
+        <div className="segments tintMode">
+          {(["light", "dark"] as const).map((mode) => (
+            <button
+              key={mode}
+              className={previewBackground === mode ? "active" : ""}
+              onClick={() => onPreviewBackgroundChange(mode)}
+              type="button"
+            >
+              {mode}
+            </button>
           ))}
         </div>
         <label>
@@ -216,6 +330,85 @@ function VisibilitySection({
             >
               {mode}
             </button>
+          ))}
+        </div>
+        <DebugIncidents />
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Black-glass incident badge: shows when a JS error / unhandled rejection /
+ * WebGL context loss was trapped, with a one-click report (incidents + the
+ * last 30 lens states) to paste when reporting the bug.
+ */
+function DebugIncidents() {
+  const count = useSyncExternalStore(subscribeDebugIncidents, getDebugIncidentCount, () => 0);
+  const [copied, setCopied] = useState(false);
+  const copy = (text: string) => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <>
+      <label>
+        <span>
+          incidents
+          <b style={count > 0 ? { color: "#ef4444" } : undefined}>
+            {count > 0 ? `${count} trapped` : "none"}
+          </b>
+        </span>
+      </label>
+      <div className="segments tintMode">
+        {/* Always available: captures the moment manually (with a GPU probe
+            check) even when the breakage raised no event. */}
+        <button
+          onClick={() => {
+            // Screen check first (Chrome asks to share the tab: pick "This
+            // Tab"); falls back to the plain report if denied.
+            void captureScreenCheck().then(copy);
+          }}
+          type="button"
+        >
+          {copied ? "Copied" : "Report bug now"}
+        </button>
+        <button onClick={() => copy(captureManualIncident())} type="button">
+          plain
+        </button>
+        {count > 0 && (
+          <button onClick={() => copy(buildDebugReport())} type="button">
+            Copy report
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+function VisibilitySection({
+  onVisibilityChange,
+  visibility,
+}: Pick<FloatingControlsProps, "onVisibilityChange" | "visibility">) {
+  return (
+    <details className="accordionSection" open>
+      <summary>
+        <span>Visible</span>
+        <b>{VISIBILITY_OPTIONS.filter(({ key }) => visibility[key]).length} on</b>
+      </summary>
+      <div className="accordionBody">
+        <div className="visibilityGrid">
+          {VISIBILITY_OPTIONS.map(({ key, label }) => (
+            <label className="visibilityToggle" key={key}>
+              <span>{label}</span>
+              <input
+                checked={visibility[key]}
+                onChange={(event) => onVisibilityChange(key, event.target.checked)}
+                type="checkbox"
+              />
+            </label>
           ))}
         </div>
       </div>
@@ -403,10 +596,12 @@ function LensSection({
   groupIndex,
   lens,
   onLensChange,
+  onPresetSelect,
   open,
   title,
 }: Pick<FloatingControlsProps, "lens" | "onLensChange"> & {
   groupIndex: 0 | 1 | 2;
+  onPresetSelect?: (id: LensStagePresetId) => void;
   open?: boolean;
   title: string;
 }) {
@@ -424,9 +619,39 @@ function LensSection({
         <b>{summary}</b>
       </summary>
       <div className="accordionBody">
+        {onPresetSelect && (
+          <div className="segments tintMode">
+            {LENS_STAGE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                className={lensEquals(lens, preset.lens) ? "active" : ""}
+                onClick={() => onPresetSelect(preset.id)}
+                type="button"
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {onPresetSelect && <CopyPresetButton lens={lens} />}
         <div className="group">
           {CONTROL_GROUPS[groupIndex].map((key) => {
             const limits = CONTROL_LIMITS[key];
+            const taper = limits.taper;
+            // Tapered sliders travel in normalized t and map through t^taper,
+            // concentrating physical travel on the sensitive low end.
+            const range = limits.max - limits.min;
+            const sliderValue = taper
+              ? Math.pow(Math.min(1, Math.max(0, (lens[key] - limits.min) / range)), 1 / taper)
+              : lens[key];
+            const handleChange = (raw: number) => {
+              if (!taper) {
+                onLensChange(key, raw);
+                return;
+              }
+              const mapped = limits.min + range * Math.pow(raw, taper);
+              onLensChange(key, Math.round(mapped / limits.step) * limits.step);
+            };
             return (
               <label key={key}>
                 <span>
@@ -434,12 +659,12 @@ function LensSection({
                   <b>{formatValue(lens[key])}</b>
                 </span>
                 <input
-                  min={limits.min}
-                  max={limits.max}
-                  step={limits.step}
+                  min={taper ? 0 : limits.min}
+                  max={taper ? 1 : limits.max}
+                  step={taper ? 0.001 : limits.step}
                   type="range"
-                  value={lens[key]}
-                  onChange={(event) => onLensChange(key, Number(event.target.value))}
+                  value={sliderValue}
+                  onChange={(event) => handleChange(Number(event.target.value))}
                 />
               </label>
             );
@@ -447,6 +672,26 @@ function LensSection({
         </div>
       </div>
     </details>
+  );
+}
+
+function CopyPresetButton({ lens }: { lens: ResolvedLensParams }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="segments tintMode">
+      <button
+        onClick={() => {
+          void navigator.clipboard.writeText(formatLensPresetTs(lens)).then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+        type="button"
+      >
+        {copied ? "Copied" : "Copy preset"}
+      </button>
+    </div>
   );
 }
 

@@ -159,7 +159,7 @@ export function sampleImageChannel(
 
 export function sampleGlassChannel(input: GlassSampleInput, channel: 0 | 1 | 2): number {
   const pixelRatio = input.pixelRatio ?? 1;
-  const rawBaseScale = Math.max(input.lens.scaleX, input.lens.scaleY);
+  const rawBaseScale = Math.max(Math.abs(input.lens.scaleX), Math.abs(input.lens.scaleY));
   const baseScale = rawBaseScale * (input.strength ?? CANVAS_STRENGTH);
   const ratioX = rawBaseScale > 0 ? input.lens.scaleX / rawBaseScale : 0;
   const ratioY = rawBaseScale > 0 ? input.lens.scaleY / rawBaseScale : 0;

@@ -1,5 +1,5 @@
 import type { DisplacementMap } from "../engine/types";
-import { countBlurCache, countGlassDraw, glassWebglContextCreated, glassWebglContextDestroyed } from "./perf-stats";
+import { countBlurCache, countGlassDraw, glassWebglContextCreated, glassWebglContextDestroyed , glassWebglContextLost } from "./perf-stats";
 import {
   clampPixelRatio,
   createLinearMapTexture,
@@ -127,6 +127,7 @@ export function createGlassCompositor(
   const onContextLost = (event: Event): void => {
     event.preventDefault?.();
     contextLost = true;
+    glassWebglContextLost();
     resources = null;
     mapTextures = new Map();
     const now = Date.now();
@@ -245,6 +246,17 @@ export function createGlassCompositor(
 
     drawGlassPass(gl, r, input, viewport, outW, outH, getMapTexture(input.map));
     countGlassDraw("webgl");
+
+    // Mid-frame loss check BEFORE touching the visible canvas: if the
+    // context died between the entry guard and here, the GL draw silently
+    // no-oped and the shared canvas holds garbage. Clearing + blitting it
+    // would blank the node's pill while returning "success" — the node would
+    // sit black with no fallback. Returning false keeps the previous pixels
+    // and routes the caller to the CPU path.
+    if (typeof gl.isContextLost === "function" && gl.isContextLost()) {
+      contextLost = true;
+      return false;
+    }
 
     // Blit into the node's visible canvas, same task (preserveDrawingBuffer
     // is false). The glass pass rendered into viewport (0,0,outW,outH) — the

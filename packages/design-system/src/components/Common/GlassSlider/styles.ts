@@ -101,8 +101,11 @@ export const LensDeform = styled.span`
   top: var(--lgds-slider-lens-top);
   left: var(--lgds-slider-lens-left);
   z-index: 2;
-  width: var(--lgds-slider-lens-width);
-  height: var(--lgds-slider-lens-height);
+  /* Rendered (active-swollen) box; falls back to the resting size. The
+     track's insets stay on --lgds-slider-lens-width (RESTING) so the visible
+     track does not shrink when the thumb swells. */
+  width: var(--lgds-slider-lens-box-width, var(--lgds-slider-lens-width));
+  height: var(--lgds-slider-lens-box-height, var(--lgds-slider-lens-height));
   overflow: visible;
   pointer-events: none;
 `;
@@ -144,13 +147,13 @@ export const Lens = styled.span<{ $active?: boolean }>`
     }
   }
 
+  /* The old ::before painted a hardcoded white gloss gradient (0.78 white
+     fading from the top + a pale bottom band) over the active glass —
+     removed: it read as a sticker on the refraction and answered to no tint
+     or optics control. The glass lights itself (glow/edge in the filter). */
   &::before {
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0) 18%),
-      linear-gradient(0deg, rgba(203, 213, 225, 0.38), rgba(255, 255, 255, 0) 22%);
-    box-shadow:
-      inset 0 1px 0 rgba(148, 163, 184, 0.22),
-      inset 0 -1px 0 rgba(59, 130, 246, 0.18);
+    background: none;
+    box-shadow: none;
   }
 
   &::after {
@@ -225,10 +228,17 @@ export const Control = styled.span<{ $disabled?: boolean }>`
   }
 `;
 
+/**
+ * Fills the glass source world (including the demagnify padding) with the
+ * surface color behind the control. Set --lgds-source-bg on any ancestor to
+ * match a non-white surface — an outward-sampling (negative scale) lens
+ * mirrors this surround at its rim, so on dark surfaces the fold band only
+ * reads correctly when this matches.
+ */
 export const LensSourceBackground = styled.span`
   position: absolute;
   inset: 0;
-  background: #ffffff;
+  background: var(--lgds-source-bg, #ffffff);
 `;
 
 export const glassNodeClassName = "lgds-slider__glass-node";
@@ -247,7 +257,8 @@ export const sliderGlobalCss = `
     transform-origin: top left;
   }
 
-  .${glassSurfaceClassName}.lg-glass-surface {
+  /* Triple selector: outweighs the engine's .lg-glass-node__surface.lg-glass-surface rule. */
+  .${glassSurfaceClassName}.lg-glass-node__surface.lg-glass-surface {
     position: absolute;
     inset: 0;
     z-index: 2;

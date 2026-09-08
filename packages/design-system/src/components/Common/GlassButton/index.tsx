@@ -44,6 +44,14 @@ import {
   getCanvasBackgroundColor,
   isTransparentCssColor
 } from "../../../lib/canvas";
+import {
+  findAncestorBackdropImage,
+  getBackdropImage,
+  isBackdropImageReady,
+  peekBackdropImage,
+  type AutoGlassBackdrop,
+  type EffectiveGlassBackdrop,
+} from "../../../lib/backdrop";
 import { useGlobalCssOnce } from "../../../lib/globalCss";
 import useGlassTheme from "../../../hooks/useGlassTheme";
 import useCanvasSourceStyles from "../../../hooks/useCanvasSourceStyles";
@@ -53,9 +61,10 @@ import useCanvasSourceStyles from "../../../hooks/useCanvasSourceStyles";
  * moment the pointer goes down. On release the material holds its excited
  * state briefly (ACTIVE_RELEASE_MS), then relaxes over PRESS_TWEEN_OUT_MS.
  * Keep the hold + decay SHORT: every ms a released button stays inflated
- * reads as input lag on quick taps (~450ms release-to-rest total here).
+ * reads as input lag on quick taps (~250ms release-to-rest total here; the
+ * old 150+300ms tail read as sluggish).
  */
-const ACTIVE_RELEASE_MS = 150;
+const ACTIVE_RELEASE_MS = 70;
 /**
  * Pressed-state intensity cue: the glass is always on, so a press raises the
  * lens optics (scaleX/scaleY x 1.15, a touch more glow) instead of mounting
@@ -73,7 +82,7 @@ const PRESS_EXPOSURE = 0.62;
 const PRESS_SATURATION_BOOST = 0.9;
 const MAX_SATURATION = 3;
 const PRESS_TWEEN_IN_MS = 90;
-const PRESS_TWEEN_OUT_MS = 300;
+const PRESS_TWEEN_OUT_MS = 180;
 /**
  * Glow is the only press-boosted param baked into the displacement map, so
  * quantizing it caps a full press tween at GLOW_TWEEN_STEPS+1 cached maps
@@ -89,7 +98,7 @@ const GLOW_TWEEN_STEPS = 8;
  * `active` prop all grow identically. 10% is a confident, tactile rise that
  * still doesn't displace neighboring layout (transforms don't affect flow).
  */
-const PRESS_SCALE_BOOST = 0.1;
+const PRESS_SCALE_BOOST = 0.16;
 /**
  * Grab deformation: press-and-drag does not move the button (it is anchored
  * UI), it elastically stretches the glass toward the pull and bounces back on
@@ -99,22 +108,6 @@ const PRESS_SCALE_BOOST = 0.1;
 const GRAB_MAX_PX = 8;
 const GRAB_TRANSLATE_FACTOR = 0.4;
 
-/** Backdrop images are cached per URL so N buttons share one decode. */
-const backdropImageCache = new Map<string, HTMLImageElement>();
-
-const getBackdropImage = (url: string): HTMLImageElement => {
-  let image = backdropImageCache.get(url);
-  if (!image) {
-    image = new Image();
-    image.decoding = "async";
-    image.src = url;
-    backdropImageCache.set(url, image);
-  }
-  return image;
-};
-
-const isBackdropImageReady = (image: HTMLImageElement | undefined): image is HTMLImageElement =>
-  Boolean(image && image.complete && image.naturalWidth > 0);
 
 const GlassButton = ({
   active,
@@ -153,6 +146,12 @@ const GlassButton = ({
   // sourceVersion (and, on the backdrop path, produces a fresh drawSource
   // closure) so the lens repaints with the image without remounting.
   const [backdropLoadVersion, setBackdropLoadVersion] = useState(0);
+  // Ancestor background-image discovery: image backdrops are dynamic when
+  // the image is an ANCESTOR's CSS background (sibling layers still need the
+  // glassBackdrop prop — visual stacking is not DOM ancestry).
+  const [autoBackdrop, setAutoBackdrop] = useState<AutoGlassBackdrop | null>(null);
+  const effectiveBackdrop: EffectiveGlassBackdrop | undefined =
+    glassBackdrop ?? autoBackdrop ?? undefined;
   const sizePreset = GLASS_BUTTON_SIZE_PRESETS[size];
   const restingLens = {
     ...sizePreset.lens,
@@ -197,7 +196,7 @@ const GlassButton = ({
   // need scroll-synced rect measurements), so a backdrop upgrades "auto" to
   // the pixel path: WebGL first, CPU canvas fallback. Explicit choices win.
   const resolvedRenderer =
-    glassBackdrop && (renderer === undefined || renderer === "auto") ? "webgl" : renderer;
+    effectiveBackdrop && (renderer === undefined || renderer === "auto") ? "webgl" : renderer;
 
   // The button has no CSS face — variants are expressed entirely through the
   // glass material's tint. An explicit glassTint prop wins over the variant.
@@ -246,7 +245,7 @@ const GlassButton = ({
   // sampled from live layout rects at draw time (scroll/layout shifts change
   // the pixels without any prop changing), so that path deliberately keeps
   // legacy identity keying — sourceVersion stays undefined.
-  const sourceVersion = glassBackdrop
+  const sourceVersion = effectiveBackdrop
     ? undefined
     : `${backdropLoadVersion}|${sourceStyles.key}|${restingLens.radius}`;
 
@@ -259,11 +258,14 @@ const GlassButton = ({
     ctx.fillStyle = sourceBackground;
     ctx.fillRect(0, 0, metrics.sourceWidth, metrics.sourceHeight);
 
-    if (glassBackdrop && control) {
-      const image = backdropImageCache.get(glassBackdrop.image);
+    if (effectiveBackdrop && control) {
+      const image = peekBackdropImage(effectiveBackdrop.image);
       if (isBackdropImageReady(image)) {
         const anchorElement =
-          glassBackdrop.anchor?.current ?? (control.offsetParent as HTMLElement | null) ?? control;
+          effectiveBackdrop.anchorElement ??
+          effectiveBackdrop.anchor?.current ??
+          (control.offsetParent as HTMLElement | null) ??
+          control;
         // Rects are sampled at draw time so the slice tracks the live layout:
         // CSS cover scale around the anchor, translated by the button's offset
         // within it.
@@ -299,6 +301,12 @@ const GlassButton = ({
     const updateSize = () => {
       const rect = control.getBoundingClientRect();
       setControlSize({ height: rect.height, width: rect.width });
+      const discovered = findAncestorBackdropImage(control);
+      setAutoBackdrop((previous) =>
+        previous?.image === discovered?.image && previous?.anchorElement === discovered?.anchorElement
+          ? previous
+          : discovered,
+      );
     };
     updateSize();
 
@@ -314,7 +322,7 @@ const GlassButton = ({
     if (!isInteractive) grab.cancel();
   }, [grab, isInteractive]);
 
-  const backdropImageUrl = glassBackdrop?.image;
+  const backdropImageUrl = effectiveBackdrop?.image;
 
   useEffect(() => {
     if (!backdropImageUrl || typeof window === "undefined") return undefined;

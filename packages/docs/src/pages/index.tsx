@@ -45,8 +45,9 @@ export default function IntroductionPage() {
         bindings.
       </p>
       <p>
-        Three components are live — Glass Modal, Glass Slider, and Glass Switch — each rendering
-        single-lens glass through the library's GlassNode primitive.
+        Five components are live — Glass Button, Glass Dropdown, Glass Modal, Glass Slider, and
+        Glass Switch. Most render single-lens glass through the library's GlassNode primitive; the
+        dropdown renders merged (liquid blend) glass so its trigger and menu goo together.
       </p>
     </Stack>
   );

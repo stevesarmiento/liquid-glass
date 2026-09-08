@@ -39,6 +39,14 @@ const EXIT_DURATION_MS = 220;
 const DEFAULT_PORTAL_ID = "__LGDS_GLASS_MODAL_PORTAL__";
 const DEFAULT_VIEWPORT_SIZE = { height: 1, width: 1 };
 export const DEFAULT_MODAL_GLASS_SETTINGS: GlassModalGlassSettings = {
+  // mapSize deliberately omitted: GlassNode derives it from the measured
+  // surface in device pixels (autoMapSize — 512 for a typical modal at any
+  // dpr ≥ 1), keeping the modal inside the quality governor's halving policy.
+  //
+  // maxSlope is explicit so the fold guard is part of the authored preset,
+  // not an inherited default. Measured with the engine's clampLensScales at
+  // this preset: a 380px-wide modal renders scaleX/scaleY 40 UNCLAMPED at
+  // heights ≥ ~300px; only shorter surfaces soft-limit scaleY (~31 at 280px).
   lens: {
     radius: 22,
     scaleX: 40,
@@ -49,8 +57,8 @@ export const DEFAULT_MODAL_GLASS_SETTINGS: GlassModalGlassSettings = {
     splay: 0.72,
     glow: 1.15,
     edge: 0.90,
-    blur: 12,
-    mapSize: 512
+    maxSlope: 1.4,
+    blur: 12
   },
   tint: "clear",
   surfaceBlur: 0,
@@ -266,6 +274,10 @@ const GlassModal = ({
     event.stopPropagation();
   };
 
+  // Two-layer override contract: `glassSettings.lens` sits UNDER the
+  // measured surface size (its type forbids width/height), while the
+  // `glassLens` prop spreads OVER it — width/height/radius are size-derived
+  // unless that prop provides them (see GlassModalProps.glassLens).
   const modalLens = useMemo(
     () => ({
       ...DEFAULT_MODAL_GLASS_SETTINGS.lens,

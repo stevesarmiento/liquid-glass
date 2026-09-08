@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { GlassSlider } from "@liquid-glass/design-system";
+import { GlassSlider, GLASS_SLIDER_SIZE_PRESETS } from "@liquid-glass/design-system";
 import styled from "styled-components";
 
 import PreviewContainer from "../../components/PreviewContainer";
 import PropsTable, { type PropRow } from "../../components/PropsTable";
+import PresetTable from "../../components/PresetTable";
 
 const PROP_ROWS: PropRow[] = [
   { name: "value", type: "number", description: "Controlled slider value." },
@@ -130,6 +131,14 @@ export default function GlassSliderPage() {
       <div>
         <h2>Props</h2>
         <PropsTable rows={PROP_ROWS} />
+      </div>
+      <div>
+        <h2>Size presets</h2>
+        <p>
+          Generated from the shipped presets in sizes.ts. Tier optics derive from one ratio
+          profile anchored at md, so every size renders the same material.
+        </p>
+        <PresetTable presets={GLASS_SLIDER_SIZE_PRESETS} />
       </div>
     </Stack>
   );

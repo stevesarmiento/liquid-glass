@@ -9,6 +9,14 @@ body {
   overflow: hidden;
 }
 button, input { font: inherit; }
+/* No native drag ghosts anywhere in the tuning surface (see App.tsx). */
+img,
+svg,
+canvas {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
 .shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1275,9 +1283,38 @@ button, input { font: inherit; }
     0 24px 70px rgba(0,0,0,0.24),
     0 2px 8px rgba(0,0,0,0.08);
 }
+/*
+ * Dark preview surface for judging outward-sampling (negative scale) looks:
+ * the rim fold mirrors the surround, so on white it is invisible. The
+ * --lgds-source-bg var flows into the components' glass source worlds so the
+ * pulled-in surround matches the panel.
+ */
+.componentPreview.previewDark {
+  --lgds-source-bg: #1b1b1f;
+  background: #1b1b1f;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.componentPreview.previewDark .switchPreviewRow span,
+.componentDock .previewDark span {
+  color: rgba(255, 255, 255, 0.55);
+}
 .sliderPreview {
   width: min(380px, calc(100vw - 48px));
   min-width: 0;
+  justify-items: stretch;
+  gap: 14px;
+}
+.sliderPreviewRow {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.sliderPreviewRow span {
+  color: rgba(17, 17, 17, 0.5);
+  font-size: 11px;
+  font-weight: 680;
 }
 .switchPreview {
   width: 210px;

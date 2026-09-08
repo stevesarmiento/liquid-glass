@@ -10,7 +10,7 @@ describe("computeCoverSlice", () => {
       imageWidth: 2000,
       imageHeight: 1000,
       anchor: { left: 0, top: 0, width: 400, height: 400 },
-      target: { left: 0, top: 0 }
+      target: { left: 0, top: 0 },
     });
 
     expect(slice).toEqual({ x: -200, y: 0, width: 800, height: 400 });
@@ -23,7 +23,7 @@ describe("computeCoverSlice", () => {
       imageWidth: 500,
       imageHeight: 1000,
       anchor: { left: 0, top: 0, width: 800, height: 200 },
-      target: { left: 0, top: 0 }
+      target: { left: 0, top: 0 },
     });
 
     expect(slice).toEqual({ x: 0, y: -700, width: 800, height: 1600 });
@@ -37,7 +37,7 @@ describe("computeCoverSlice", () => {
       imageWidth: 2000,
       imageHeight: 1000,
       anchor: { left: 10, top: 20, width: 400, height: 400 },
-      target: { left: 130, top: 100 }
+      target: { left: 130, top: 100 },
     });
 
     // Centered cover offset (-200) minus the target's (120, 80) offset within the anchor.
@@ -50,7 +50,7 @@ describe("computeCoverSlice", () => {
       imageWidth: 1234,
       imageHeight: 777,
       anchor,
-      target: { left: anchor.left, top: anchor.top }
+      target: { left: anchor.left, top: anchor.top },
     });
 
     // Relative to the anchor's own origin, the image must start at or before 0

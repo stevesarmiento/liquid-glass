@@ -23,35 +23,75 @@ export const DEFAULT_LENS_PARAMS: ResolvedLensParams = {
   mapSize: 256,
 };
 
-export function normalizeLensParams(input: Partial<LensParams> = {}): ResolvedLensParams {
-  const width = clamp(finiteOr(input.width, DEFAULT_LENS_PARAMS.width), 1, 4096);
-  const height = clamp(finiteOr(input.height, DEFAULT_LENS_PARAMS.height), 1, 4096);
-  const maxRadius = Math.min(width, height) * 0.5;
+export type LensParamLimit = {
+  min: number;
+  max: number;
+  /** Effective max is additionally capped at min(width, height) / 2. */
+  halfMinSideCap?: boolean;
+  /** Effective max is additionally capped at min(width, height). */
+  minSideCap?: boolean;
+  /** Rounded to an integer before clamping (mapSize). */
+  round?: boolean;
+};
 
-  return {
-    width,
-    height,
-    radius: clamp(finiteOr(input.radius, DEFAULT_LENS_PARAMS.radius), 0, maxRadius),
-    scaleX: clamp(finiteOr(input.scaleX, DEFAULT_LENS_PARAMS.scaleX), 0, 512),
-    scaleY: clamp(finiteOr(input.scaleY, DEFAULT_LENS_PARAMS.scaleY), 0, 512),
-    chroma: clamp(finiteOr(input.chroma, DEFAULT_LENS_PARAMS.chroma), 0, 8),
-    depth: clamp(finiteOr(input.depth, DEFAULT_LENS_PARAMS.depth), 0, maxRadius),
-    dome: clamp(finiteOr(input.dome, DEFAULT_LENS_PARAMS.dome), 0, 4096),
-    splay: clamp(finiteOr(input.splay, DEFAULT_LENS_PARAMS.splay), 0.001, 1),
-    glow: clamp(finiteOr(input.glow, DEFAULT_LENS_PARAMS.glow), 0, 4),
-    edge: clamp(finiteOr(input.edge, DEFAULT_LENS_PARAMS.edge), 0, 4),
-    glowSpread: clamp(finiteOr(input.glowSpread, DEFAULT_LENS_PARAMS.glowSpread), 0.05, 2),
-    glowExponent: clamp(finiteOr(input.glowExponent, DEFAULT_LENS_PARAMS.glowExponent), 0.1, 8),
-    edgeExponent: clamp(finiteOr(input.edgeExponent, DEFAULT_LENS_PARAMS.edgeExponent), 0.1, 8),
-    specularRotation: clamp(
-      finiteOr(input.specularRotation, DEFAULT_LENS_PARAMS.specularRotation),
-      -360,
-      360,
-    ),
-    maxSlope: clamp(finiteOr(input.maxSlope, DEFAULT_LENS_PARAMS.maxSlope), 0.05, 100),
-    blur: clamp(finiteOr(input.blur, DEFAULT_LENS_PARAMS.blur), 0, 128),
-    mapSize: clamp(Math.round(input.mapSize ?? DEFAULT_LENS_PARAMS.mapSize), 8, 2048),
-  };
+/**
+ * Clamp ranges applied by `normalizeLensParams`, one entry per lens param in
+ * `DEFAULT_LENS_PARAMS` key order (docs tables iterate this alongside the
+ * defaults). radius/depth carry `halfMinSideCap`: their static max only
+ * matters for lenses larger than 4096px — the live cap is min(w, h) / 2.
+ */
+export const LENS_PARAM_LIMITS: Record<keyof ResolvedLensParams, LensParamLimit> = {
+  width: { min: 1, max: 4096 },
+  height: { min: 1, max: 4096 },
+  radius: { min: 0, max: 2048, halfMinSideCap: true },
+  // Negative scale inverts the sample direction: the lens demagnifies
+  // (zoom-out), pulling backdrop in from beyond its bounds.
+  scaleX: { min: -512, max: 512 },
+  scaleY: { min: -512, max: 512 },
+  chroma: { min: 0, max: 8 },
+  // Depth beyond min(w,h)/2 still matters: the inner rect is already
+  // collapsed, but the erf falloff sigma keeps growing, softening the ramp
+  // toward a full-face gradient (the key to uniform demagnification with
+  // negative scale). Capped at the full short side, where it saturates.
+  depth: { min: 0, max: 4096, minSideCap: true },
+  dome: { min: 0, max: 4096 },
+  splay: { min: 0.001, max: 1 },
+  glow: { min: 0, max: 4 },
+  edge: { min: 0, max: 4 },
+  glowSpread: { min: 0.05, max: 2 },
+  glowExponent: { min: 0.1, max: 8 },
+  edgeExponent: { min: 0.1, max: 8 },
+  specularRotation: { min: -360, max: 360 },
+  maxSlope: { min: 0.05, max: 100 },
+  blur: { min: 0, max: 128 },
+  mapSize: { min: 8, max: 2048, round: true },
+};
+
+export function normalizeLensParams(input: Partial<LensParams> = {}): ResolvedLensParams {
+  const width = resolveLensParam("width", input.width);
+  const height = resolveLensParam("height", input.height);
+  const halfMinSide = Math.min(width, height) * 0.5;
+
+  const result = { width, height } as ResolvedLensParams;
+  for (const key of Object.keys(DEFAULT_LENS_PARAMS) as Array<keyof ResolvedLensParams>) {
+    if (key === "width" || key === "height") continue;
+    result[key] = resolveLensParam(key, input[key], halfMinSide);
+  }
+  return result;
+}
+
+function resolveLensParam(
+  key: keyof ResolvedLensParams,
+  value: number | undefined,
+  halfMinSide = Number.POSITIVE_INFINITY,
+): number {
+  const limit = LENS_PARAM_LIMITS[key];
+  let resolved = finiteOr(value, DEFAULT_LENS_PARAMS[key]);
+  if (limit.round) resolved = Math.round(resolved);
+  let max = limit.max;
+  if (limit.halfMinSideCap) max = Math.min(max, halfMinSide);
+  if (limit.minSideCap) max = Math.min(max, halfMinSide * 2);
+  return clamp(resolved, limit.min, max);
 }
 
 /**

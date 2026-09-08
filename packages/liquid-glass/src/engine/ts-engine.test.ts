@@ -144,6 +144,39 @@ describe("TypeScript engine", () => {
     ).toBe(33);
   });
 
+  it("quantizes the SVG filter region so scale drags do not resize it per tick", () => {
+    const geometryAt = (scaleX: number) =>
+      computeLensGeometry({
+        containerWidth: 2000,
+        containerHeight: 2000,
+        x: 0.5,
+        y: 0.5,
+        unit: "normalized",
+        mode: "target",
+        lens: normalizeLensParams({ width: 220, height: 220, scaleX, scaleY: 123, chroma: 0.75, blur: 1.3 }),
+      });
+    // The whole 84.5 -> 13.5 drag from the reported black-glass incident
+    // stays inside one 64px bleed bucket: identical region every tick.
+    const a = geometryAt(84.5);
+    const b = geometryAt(13.5);
+    expect([a.filterX, a.filterY, a.filterWidth, a.filterHeight]).toEqual([
+      b.filterX,
+      b.filterY,
+      b.filterWidth,
+      b.filterHeight,
+    ]);
+  });
+
+  it("uses scale magnitude so demagnifying lenses get the same bleed", () => {
+    // A negative scale samples OUTWARD past the lens edge; too little bleed
+    // shrinks the SVG filter region and the outward samples render
+    // transparent (backdrop shows through at the rim).
+    const positive = normalizeLensParams({ scaleX: 180, scaleY: 180, chroma: 0.75, blur: 1.3 });
+    const negative = normalizeLensParams({ scaleX: -180, scaleY: -180, chroma: 0.75, blur: 1.3 });
+    expect(targetBleed(negative)).toBe(targetBleed(positive));
+    expect(targetBleed(negative)).toBeGreaterThan(0);
+  });
+
   it("matches the brute-force reference with glow and edge enabled", () => {
     const lens: Partial<LensParams> = { glow: 1, edge: 1, mapSize: 64 };
     const fast = generateDisplacementMap(normalizeLensParams(lens));
@@ -239,6 +272,19 @@ describe("TypeScript engine", () => {
     expect(colorMatrixForScale(10, 20)).toEqual([
       0.5, 0, 0, 0, 0.25, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0,
     ]);
+  });
+
+  it("encodes negative (demagnifying) scale as a sign-inverted ratio", () => {
+    // Base is |scale|; the negative axis mirrors its channel around 0.5, so
+    // feDisplacementMap's positive scale samples in the opposite direction.
+    const matrix = colorMatrixForScale(-20, 10);
+    expect(matrix[0]).toBe(-1); // rx
+    expect(matrix[4]).toBe(1); // 0.5 * (1 - rx): value 0.5 still maps to 0.5
+    expect(matrix[6]).toBe(0.5); // ry
+    // Fully negative on both axes keeps a positive base (no dead ratios).
+    const both = colorMatrixForScale(-20, -10);
+    expect(both[0]).toBe(-1);
+    expect(both[6]).toBe(-0.5);
   });
 
   it("computes normalized and pixel geometry", () => {

@@ -1,123 +1,68 @@
 import styled from "styled-components";
 
+import {
+  DEFAULT_LENS_PARAMS,
+  LENS_PARAM_LIMITS,
+  type LensParamLimit,
+  type ResolvedLensParams,
+} from "liquid-glass";
+
 import CodeBlock from "../../components/CodeBlock";
 import PropsTable, { type PropRow } from "../../components/PropsTable";
 
-// Defaults and clamps mirror normalizeLensParams in
-// packages/liquid-glass/src/engine/defaults.ts.
-const PARAM_ROWS: PropRow[] = [
-  {
-    name: "width",
-    type: "number",
-    defaultValue: "180",
-    description: "Lens width in px. Clamped to 1–4096.",
-  },
-  {
-    name: "height",
-    type: "number",
-    defaultValue: "120",
-    description: "Lens height in px. Clamped to 1–4096.",
-  },
-  {
-    name: "radius",
-    type: "number",
-    defaultValue: "36",
-    description:
-      "Corner radius of the rounded-rect lens in px. Clamped to 0–min(width, height) / 2 (a fully round capsule at the max).",
-  },
-  {
-    name: "scaleX",
-    type: "number",
-    defaultValue: "18",
-    description: "Horizontal displacement strength in px. Clamped to 0–512.",
-  },
-  {
-    name: "scaleY",
-    type: "number",
-    defaultValue: "18",
-    description: "Vertical displacement strength in px. Clamped to 0–512.",
-  },
-  {
-    name: "chroma",
-    type: "number",
-    defaultValue: "0.35",
-    description:
-      "Chromatic aberration: per-channel displacement offsets (R ×(1 + 0.2c), G ×(1 + 0.1c), B base). Clamped to 0–8.",
-  },
-  {
-    name: "depth",
-    type: "number",
-    defaultValue: "18",
-    description:
-      "Depth of the refracting edge band in px — how far the displacement ramp reaches into the lens. Clamped to 0–min(width, height) / 2.",
-  },
-  {
-    name: "dome",
-    type: "number",
-    defaultValue: "90",
-    description:
-      "Height of the virtual glass dome, shaping how strongly the center bulges versus the edges. Clamped to 0–4096.",
-  },
-  {
-    name: "splay",
-    type: "number",
-    defaultValue: "0.78",
-    description:
-      "How much the displacement field splays outward toward the corners. Clamped to 0.001–1. Ignored in merged (liquid blend) mode.",
-  },
-  {
-    name: "glow",
-    type: "number",
-    defaultValue: "0.45",
-    description: "Strength of the diagonal specular glow band. Clamped to 0–4.",
-  },
-  {
-    name: "edge",
-    type: "number",
-    defaultValue: "0.45",
-    description: "Strength of the edge highlight ring. Clamped to 0–4.",
-  },
-  {
-    name: "glowSpread",
-    type: "number",
-    defaultValue: "0.62",
-    description: "Width of the diagonal glow band, in normalized units. Clamped to 0.05–2.",
-  },
-  {
-    name: "glowExponent",
-    type: "number",
-    defaultValue: "1.5",
-    description:
-      "Exponent applied to the glow ramp — higher values concentrate the glow into a tighter hot band. Clamped to 0.1–8.",
-  },
-  {
-    name: "edgeExponent",
-    type: "number",
-    defaultValue: "1.2",
-    description:
-      "Exponent applied to the edge highlight ramp — higher values pin the highlight to the rim. Clamped to 0.1–8.",
-  },
-  {
-    name: "specularRotation",
-    type: "number",
-    defaultValue: "45",
-    description: "Rotation of the specular highlight axis, in degrees. Clamped to -360–360.",
-  },
-  {
-    name: "blur",
-    type: "number",
-    defaultValue: "2.4",
-    description:
-      "Backdrop blur in px applied to the refracted scene (true Gaussian on WebGL, box blur on the CPU canvas). Clamped to 0–128.",
-  },
-  {
-    name: "mapSize",
-    type: "number",
-    defaultValue: "256",
-    description:
-      "Displacement map resolution (longest side, px; rounded). Clamped to 8–2048. Larger maps are sharper but cost more to generate — relevant when merged mode regenerates per frame.",
-  },
-];
+/**
+ * Prose stays a docs concern; the Record type keeps it EXHAUSTIVE — adding an
+ * engine param without a description fails typecheck. Defaults and clamp
+ * ranges are imported from the package, so the table can't drift from
+ * normalizeLensParams again.
+ */
+const PARAM_DESCRIPTIONS: Record<keyof ResolvedLensParams, string> = {
+  width: "Lens width in px.",
+  height: "Lens height in px.",
+  radius:
+    "Corner radius of the rounded-rect lens in px (a fully round capsule at the max).",
+  scaleX:
+    "Horizontal displacement strength in px. Positive samples toward the lens center (magnify); negative samples outward, demagnifying — the lens shows a shrunken, zoomed-out view of the backdrop.",
+  scaleY: "Vertical displacement strength in px. Sign works as for scaleX.",
+  chroma:
+    "Chromatic aberration: per-channel displacement offsets (R ×(1 + 0.2c), G ×(1 + 0.1c), B base).",
+  depth:
+    "Depth of the refracting edge band in px — how far the displacement ramp reaches into the lens.",
+  dome: "Height of the virtual glass dome, shaping how strongly the center bulges versus the edges.",
+  splay:
+    "How much the displacement field splays outward toward the corners. Ignored in merged (liquid blend) mode.",
+  glow: "Strength of the diagonal specular glow band.",
+  edge: "Strength of the edge highlight ring.",
+  glowSpread: "Width of the diagonal glow band, in normalized units.",
+  glowExponent:
+    "Exponent applied to the glow ramp — higher values concentrate the glow into a tighter hot band.",
+  edgeExponent:
+    "Exponent applied to the edge highlight ramp — higher values pin the highlight to the rim.",
+  specularRotation: "Rotation of the specular highlight axis, in degrees.",
+  maxSlope:
+    "Upper bound on the displacement field's spatial gradient, in px of displacement per px of screen. Above 1 the sampled backdrop folds over itself (mirroring near edges); renderers soft-limit the effective scale to stay under the cap. The default 1.4 sits just above the reference preset's own ~1.29 peak, so the shipped look keeps its thin fold ring while grossly folding configurations are reined in. Set ≤ 0.95 for strictly fold-free optics; ~100 disables the guard.",
+  blur: "Backdrop blur in px applied to the refracted scene (true Gaussian on WebGL, box blur on the CPU canvas).",
+  mapSize:
+    "Displacement map resolution (longest side, px; rounded). Larger maps are sharper but cost more to generate — relevant when merged mode regenerates per frame. Component presets omit it: GlassNode derives the resolution from the lens's device-pixel size (autoMapSize), so small controls get proportionally small, cache-friendly maps.",
+};
+
+function clampSentence(limit: LensParamLimit): string {
+  const max = limit.halfMinSideCap
+    ? "min(width, height) / 2"
+    : limit.minSideCap
+      ? "min(width, height)"
+      : String(limit.max);
+  return `Clamped to ${limit.min}–${max}.`;
+}
+
+const PARAM_ROWS: PropRow[] = (
+  Object.keys(DEFAULT_LENS_PARAMS) as Array<keyof ResolvedLensParams>
+).map((name) => ({
+  name,
+  type: "number",
+  defaultValue: String(DEFAULT_LENS_PARAMS[name]),
+  description: `${PARAM_DESCRIPTIONS[name]} ${clampSentence(LENS_PARAM_LIMITS[name])}`,
+}));
 
 const Stack = styled.div`
   display: grid;
@@ -133,7 +78,8 @@ export default function LensParamsPage() {
           Every glass surface — the controller's lens option, per-component glassLens props, and the
           engine's generateDisplacementMap — is tuned with the same LensParams shape. All fields are
           optional; normalizeLensParams fills defaults and clamps out-of-range values (exported
-          along with DEFAULT_LENS_PARAMS from the package root).
+          along with DEFAULT_LENS_PARAMS and LENS_PARAM_LIMITS from the package root — this table
+          is generated from those exports).
         </p>
       </div>
 

@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { GlassModal } from "@liquid-glass/design-system";
 import type { GlassTintInput, GlassTintName, LensParams, LiquidGlassEngineMode, LiquidGlassRenderer, ResolvedLensParams } from "liquid-glass";
 
+import { forwardLensOptics } from "../playgroundUtils";
+
 interface GlassPreviewModalProps {
   engineMode: LiquidGlassEngineMode;
   glassTint: GlassTintName | GlassTintInput;
@@ -22,20 +24,7 @@ export function GlassPreviewModal({
   const modalLens = useMemo<Partial<Omit<LensParams, "width" | "height">>>(
     () => ({
       radius: lens.radius,
-      scaleX: lens.scaleX,
-      scaleY: lens.scaleY,
-      chroma: lens.chroma,
-      depth: lens.depth,
-      dome: lens.dome,
-      splay: lens.splay,
-      glow: lens.glow,
-      edge: lens.edge,
-      glowSpread: lens.glowSpread,
-      glowExponent: lens.glowExponent,
-      edgeExponent: lens.edgeExponent,
-      specularRotation: lens.specularRotation,
-      blur: lens.blur,
-      mapSize: lens.mapSize,
+      ...forwardLensOptics(lens),
     }),
     [lens],
   );

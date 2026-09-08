@@ -86,12 +86,13 @@ const CLOSE_HIDE_MS = 280;
  */
 /**
  * Press feel (matches GlassButton): near-instant ~90ms attack, a brief
- * post-release hold, then a ~300ms relaxation — responsive in, soft out.
+ * post-release hold (70ms), then a ~180ms relaxation — responsive in, quick
+ * out (the old 150+300ms tail read as sluggish).
  */
-const ACTIVE_RELEASE_MS = 150;
+const ACTIVE_RELEASE_MS = 70;
 /** Press tween attack/release durations, in ms. */
 const PRESS_TWEEN_IN_MS = 90;
-const PRESS_TWEEN_OUT_MS = 300;
+const PRESS_TWEEN_OUT_MS = 180;
 /** Pressed-optics boost: lens scale ×1.15 and +0.45 glow at full press. */
 const PRESSED_OPTICS_SCALE = 1.15;
 const PRESSED_GLOW_BOOST = 0.45;
@@ -131,14 +132,14 @@ const PRESS_SQUISH_X = 0;
  * (works for keyboard presses too) and applied to the icon span ONLY — the
  * canvas-painted glass face must not DOM-scale; it grows in the map instead
  * (PRESS_FACE_SCALE below). */
-const PRESS_ICON_SCALE = 1.1;
+const PRESS_ICON_SCALE = 1.16;
 /**
  * GlassButton's press scales the ENTIRE glass face up 10%, lens included.
  * The trigger's face is canvas-painted, so the same growth is expressed in
  * the merged map: L0 grows uniformly along the press tween. Without this the
  * glass would read rigid under the finger — only the icon would move.
  */
-const PRESS_FACE_SCALE = 1.1;
+const PRESS_FACE_SCALE = 1.16;
 /**
  * Grab-the-material on the OPEN menu: press-and-drag does not move the menu,
  * it elastically deforms the actual lens. The rubberbanded deflection from
@@ -181,7 +182,7 @@ const TRIGGER_GRAB_CONTENT_FACTOR = 0.3;
  * readable while the rim still reads as glass. mapSize 192 keeps per-frame
  * regeneration sub-millisecond during the morph.
  */
-const DEFAULT_DROPDOWN_OPTICS: Partial<LensParams> = {
+export const DEFAULT_DROPDOWN_OPTICS: Partial<LensParams> = {
   depth: 14,
   dome: 40,
   scaleX: 14,
@@ -195,7 +196,7 @@ const DEFAULT_DROPDOWN_OPTICS: Partial<LensParams> = {
 
 /**
  * Local copy of the controller's chromeForTint mapping (controller.ts):
- * fill from `background`, 1.5px border band from `border`, rim highlight from
+ * fill from `background`, 1px border band from `border`, rim highlight from
  * `highlight` (alpha = strength, floored so presets keep a subtle top rim),
  * interior glow from the highlight gradient fields, saturation, and the CSS
  * reference shadow (0 18px 48px) scaled uniformly so |offset| + blur fits the

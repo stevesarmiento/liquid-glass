@@ -33,7 +33,7 @@ const PROP_ROWS: PropRow[] = [
   { name: "gap", type: "number", defaultValue: "0", description: "Top inset of the open menu over the trigger, in px. At 0 the settled menu replaces the button instead of leaving a separate bubble above it." },
   { name: "blend", type: "number", defaultValue: "36", description: "Smooth-union (goo) blend distance in px. Larger = thicker liquid neck during the morph." },
   { name: "glassBackdrop", type: "{ image: string; anchor?: RefObject<HTMLElement | null> }", description: "REQUIRED for the goo: the merged WebGL renderer refracts a pixel scene, sliced from this image with CSS cover semantics against the anchor element (default: the dropdown's offsetParent). Same contract as GlassButton." },
-  { name: "glassTint", type: "GlassTintName | GlassTintInput | GlassTint", defaultValue: '"frost"', description: "Glass chrome tint. The shader derives the fill, 1.5px border band, rim highlight, interior glow, saturation, and drop shadow from it (mirroring the controller's merged chrome mapping)." },
+  { name: "glassTint", type: "GlassTintName | GlassTintInput | GlassTint", defaultValue: '"frost"', description: "Glass chrome tint. The shader derives the fill, 1px border band, rim highlight, interior glow, saturation, and drop shadow from it (mirroring the controller's merged chrome mapping)." },
   { name: "glassLens", type: "Partial<LensParams>", description: "Optics overrides for the shared merged-lens params (depth 14, dome 40, scale 14/12, glow 0.5, edge 0.6, blur 1.2, mapSize 192 by default)." },
   { name: "engineMode", type: "LiquidGlassEngineMode", defaultValue: '"auto"', description: "Displacement-map engine forwarded to liquid-glass (auto / wasm / ts)." },
 ];

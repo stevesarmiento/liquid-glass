@@ -91,16 +91,35 @@ export function createGlassQualityGovernor(options: GlassQualityGovernorOptions 
       }
       return false;
     },
+    /**
+     * Steps one level back toward full quality without the smooth-frame
+     * gate. Used by IDLE recovery: upgrades normally require 180 smooth
+     * frames WHILE glass work continues, but the sampler stops when idle —
+     * without relax, a degraded level froze forever once interaction ended
+     * (degraded during tuning bursts, then stuck at surface-only: "the
+     * glass stopped working").
+     */
+    relax(nowMs: number): boolean {
+      if (level === 0) return false;
+      level = (level - 1) as GlassQualityLevel;
+      overFrames = 0;
+      underFrames = 0;
+      lastChangeAt = nowMs;
+      return true;
+    },
   };
 }
 
 /** Sampler stops once no glass work happened for this long. */
 const IDLE_STOP_MS = 2000;
+/** While idle, decay one quality level this often until back at full. */
+const IDLE_RELAX_MS = 3000;
 
 let governor = createGlassQualityGovernor();
 let override: GlassQualityLevel | null = null;
 let monitoring = false;
 let rafId: number | null = null;
+let relaxTimer: ReturnType<typeof setTimeout> | null = null;
 let lastFrameAt: number | null = null;
 let lastWorkAt = 0;
 const listeners = new Set<() => void>();
@@ -116,9 +135,25 @@ function sampleFrame(now: number): void {
   if (now - lastWorkAt > IDLE_STOP_MS) {
     monitoring = false;
     lastFrameAt = null;
+    // Idle = no glass load, so degradation is no longer justified: decay
+    // back toward full quality instead of freezing at the degraded level.
+    scheduleIdleRelax();
     return;
   }
   rafId = requestAnimationFrame(sampleFrame);
+}
+
+function scheduleIdleRelax(): void {
+  if (relaxTimer !== null || governor.level === 0) return;
+  relaxTimer = setTimeout(() => {
+    relaxTimer = null;
+    // Work resumed: the sampler's normal hysteresis owns the level again.
+    if (monitoring) return;
+    if (governor.relax(typeof performance === "undefined" ? Date.now() : performance.now())) {
+      notify();
+      scheduleIdleRelax();
+    }
+  }, IDLE_RELAX_MS);
 }
 
 /**
@@ -160,6 +195,10 @@ export function resetGlassQualityForTests(): void {
   monitoring = false;
   lastFrameAt = null;
   lastWorkAt = 0;
+  if (relaxTimer !== null) {
+    clearTimeout(relaxTimer);
+    relaxTimer = null;
+  }
   if (rafId !== null && typeof cancelAnimationFrame === "function") cancelAnimationFrame(rafId);
   rafId = null;
   notify();

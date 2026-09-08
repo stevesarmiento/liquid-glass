@@ -42,6 +42,8 @@ export interface LocalGlassWebglRenderInput {
    * version — the scene is then re-uploaded and re-blurred every render.
    */
   sceneKey?: string;
+  /** Source zoom about the lens center (see LocalGlassCanvasRenderInput.sourceZoom). */
+  sourceZoom?: number;
 }
 
 /** buildLocalGlassDrawInput's input: everything but the renderer. */
@@ -81,8 +83,9 @@ export function buildLocalGlassDrawInput(spec: LocalGlassDrawSpec): LocalGlassDr
   // With a sceneKey, skip re-running the source draw callback entirely when
   // the content (and canvas size) is unchanged — e.g. press tweens animate
   // lens optics over a static source.
+  const sourceZoom = spec.sourceZoom ?? 1;
   const contentKey =
-    spec.sceneKey !== undefined ? `${spec.sceneKey}|${sceneWidth}x${sceneHeight}` : null;
+    spec.sceneKey !== undefined ? `${spec.sceneKey}|z${sourceZoom}|${sceneWidth}x${sceneHeight}` : null;
   const sceneUnchanged = contentKey !== null && lastSceneContent.get(spec.sceneCanvas) === contentKey;
 
   if (!sceneUnchanged) {
@@ -90,6 +93,13 @@ export function buildLocalGlassDrawInput(spec: LocalGlassDrawSpec): LocalGlassDr
     sceneCtx.clearRect(0, 0, sceneWidth, sceneHeight);
     sceneCtx.save();
     sceneCtx.scale(pixelRatio, pixelRatio);
+    if (sourceZoom !== 1) {
+      const zoomCx = spec.lensX + lens.width / 2;
+      const zoomCy = spec.lensY + lens.height / 2;
+      sceneCtx.translate(zoomCx, zoomCy);
+      sceneCtx.scale(sourceZoom, sourceZoom);
+      sceneCtx.translate(-zoomCx, -zoomCy);
+    }
     spec.source({
       ctx: sceneCtx,
       metrics: {

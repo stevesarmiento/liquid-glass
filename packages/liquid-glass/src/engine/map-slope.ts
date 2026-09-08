@@ -156,9 +156,17 @@ export function clampScalesForMap(input: ClampScalesInput): ClampedScales {
   const slopePerScaleY =
     input.texelSlope.y * (input.mapHeight / Math.max(input.spanHeight, 1e-6)) * strength * chromaFactor;
 
+  // Clamp magnitudes, preserve signs: a negative (demagnifying) scale
+  // folds the backdrop exactly like a positive one.
   return {
-    scaleX: slopePerScaleX > 1e-9 ? Math.min(input.scaleX, maxSlope / slopePerScaleX) : input.scaleX,
-    scaleY: slopePerScaleY > 1e-9 ? Math.min(input.scaleY, maxSlope / slopePerScaleY) : input.scaleY,
+    scaleX:
+      slopePerScaleX > 1e-9
+        ? Math.sign(input.scaleX) * Math.min(Math.abs(input.scaleX), maxSlope / slopePerScaleX)
+        : input.scaleX,
+    scaleY:
+      slopePerScaleY > 1e-9
+        ? Math.sign(input.scaleY) * Math.min(Math.abs(input.scaleY), maxSlope / slopePerScaleY)
+        : input.scaleY,
   };
 }
 

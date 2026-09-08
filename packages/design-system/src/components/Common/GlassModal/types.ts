@@ -11,8 +11,12 @@ import type {
 import type { GlassTone } from "liquid-glass/react";
 
 export type GlassModalGlassSettings = {
-  /** Modal lens defaults. Width and height are normally replaced by the measured modal surface. */
-  lens: Omit<LensParams, "width" | "height">;
+  /**
+   * Modal lens defaults. Width and height are normally replaced by the
+   * measured modal surface; mapSize is optional so the default preset can
+   * leave it to autoMapSize (pass one here to pin it).
+   */
+  lens: Omit<LensParams, "width" | "height" | "mapSize"> & { mapSize?: number };
   /** Tint forwarded to the glass modal node. */
   tint: GlassTintName | GlassTintInput | GlassTint;
   /** Background blur in px for the glass modal surface. */

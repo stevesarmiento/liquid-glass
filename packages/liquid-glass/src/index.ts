@@ -1,10 +1,19 @@
 export {
   DEFAULT_LENS_PARAMS,
+  LENS_PARAM_LIMITS,
   QUANT_STEPS_PER_OCTAVE,
   autoMapSize,
   normalizeLensParams,
   quantizeLensSizeUp,
+  type LensParamLimit,
 } from "./engine/defaults";
+export {
+  DEFAULT_LENS_PROFILE,
+  deriveLensParams,
+  type DerivedLensParams,
+  type LensSizeProfile,
+  type RatioTerm,
+} from "./engine/derive";
 export { createLiquidGlassEngine, getSharedLiquidGlassEngine } from "./engine/create-engine";
 export {
   clearDisplacementMapCache,
@@ -115,6 +124,7 @@ export type {
 } from "./web/local-canvas";
 export type { GlassTint, GlassTintInput, GlassTintName, GlassTintPreset, ParsedCssColor } from "./web/tints";
 export {
+  DEFAULT_MERGED_BLEND,
   createLiquidGlassController,
   type LensInstanceInput,
   type LiquidGlassController,

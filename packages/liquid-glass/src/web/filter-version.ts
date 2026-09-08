@@ -23,7 +23,7 @@ export interface GlassFilterVersionInput extends GlassFilterBleedInput {
 
 // Keep in sync with `targetBleed` in src/engine/ts-engine.ts.
 export function getGlassFilterBleed({ blur, chroma, scaleX, scaleY }: GlassFilterBleedInput): number {
-  return Math.ceil(Math.max(scaleX, scaleY) * (1 + 0.2 * chroma) + blur * 3 + 4);
+  return Math.ceil(Math.max(Math.abs(scaleX), Math.abs(scaleY)) * (1 + 0.2 * chroma) + blur * 3 + 4);
 }
 
 export function getGlassFilterVersion(input: GlassFilterVersionInput): string {

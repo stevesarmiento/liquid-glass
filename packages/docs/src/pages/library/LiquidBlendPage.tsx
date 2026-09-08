@@ -28,7 +28,7 @@ const controller = createLiquidGlassController({
   mode: "target",
   sourceImageUrl: "/scene.jpg", // required for merged rendering
   lens: { width: 120, height: 120, radius: 60 }, // shared optics + defaults
-  blend: 40, // smooth-union distance in px (default 40)
+  blend: 40, // smooth-union distance in px (DEFAULT_MERGED_BLEND, exported)
   tint: "aqua", // chrome drawn by the shader from the merged SDF
   lenses: [
     { position: { x: 0.35, y: 0.5 } },

@@ -20,6 +20,7 @@ import type {
 import { IconLockFill, IconLockOpenFill } from "symbols-react";
 
 import { KEYPAD_KEYS, PASSCODE } from "../playgroundConfig";
+import { forwardLensOptics } from "../playgroundUtils";
 
 interface LockScreenKeypadProps {
   backgroundUrl: string;
@@ -126,20 +127,7 @@ export const LockScreenKeypad = memo(function LockScreenKeypad({
   const keyLens = useMemo<Partial<LensParams>>(
     () => ({
       radius: KEY_SIZE / 2,
-      scaleX: lens.scaleX,
-      scaleY: lens.scaleY,
-      chroma: lens.chroma,
-      depth: Math.min(lens.depth, 16),
-      dome: Math.min(lens.dome, 110),
-      splay: lens.splay,
-      glow: lens.glow,
-      edge: lens.edge,
-      glowSpread: lens.glowSpread,
-      glowExponent: lens.glowExponent,
-      edgeExponent: lens.edgeExponent,
-      specularRotation: lens.specularRotation,
-      blur: Math.min(lens.blur, 4),
-      mapSize: Math.min(lens.mapSize, 384),
+      ...forwardLensOptics(lens, { depth: 16, dome: 110, blur: 4, mapSize: 384 }),
     }),
     [lens],
   );

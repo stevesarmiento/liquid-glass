@@ -20,7 +20,7 @@ import type {
 import { setAttr, setHref, setStyle } from "./dom";
 import { isSafari } from "./is-safari";
 import { countGlassDraw, countMapGeneratedOutsideCache } from "./perf-stats";
-import { displacementMapToPngDataUrl } from "./png";
+import { displacementMapToPngBlobUrl, revokeMapBlobUrl } from "./png";
 import { createRenderGate, type RenderGate } from "./render-gate";
 import {
   CANVAS_STRENGTH,
@@ -134,6 +134,9 @@ export interface LiquidGlassController {
 
 const REDUCED_TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
 
+/** Default smooth-union blend distance (px) for merged multi-lens scenes. */
+export const DEFAULT_MERGED_BLEND = 40;
+
 /**
  * CSS reference for the merged chrome's drop shadow: the playground's
  * `.glassChrome` uses `box-shadow: 0 18px 48px <tint shadow>`.
@@ -158,6 +161,14 @@ const MERGED_SHADOW_BLUR = CSS_SHADOW_BLUR * MERGED_SHADOW_SCALE;
  */
 const MIN_RIM_STRENGTH = 0.18;
 
+/**
+ * During a param-drag burst, regenerate the displacement map at most this
+ * often; between regens the previous map keeps rendering (feImage stretches
+ * it over the lens box, `preserveAspectRatio: none`), so a mapSize/width drag
+ * swaps multi-MB feImage hrefs ~8x/s instead of per pointermove — churn that
+ * could silently wedge Chrome's SVG filter pipeline into rendering black.
+ */
+const MAP_REGEN_MIN_INTERVAL_MS = 120;
 let nextFilterId = 0;
 
 export function createLiquidGlassController(options: LiquidGlassControllerOptions): LiquidGlassController {
@@ -181,6 +192,13 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
   let lastMap: DisplacementMap | null = null;
   let lastMergedMapKey = "";
   let lastMergedMap: DisplacementMap | null = null;
+  // Burst control (see MAP_REGEN_MIN_INTERVAL_MS / FILTER_SETTLE_REFRESH_MS):
+  // rapid param churn (slider drags) used to mutate the SVG filter hard
+  // enough to silently wedge Chrome's filter pipeline into rendering black.
+  let lastMapRegenAt = 0;
+  let lastMapUrl0Revoke = "";
+  let mapRegenTimer: number | null = null;
+
   let warnedMergedFallback = false;
   let imageState: CanvasImageState | null = null;
   let destroyed = false;
@@ -282,6 +300,14 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
         cancelAnimationFrame(rafId);
       }
       rafId = null;
+      if (mapRegenTimer !== null) {
+        clearTimeout(mapRegenTimer);
+        mapRegenTimer = null;
+      }
+      if (lastMapUrl0Revoke) {
+        revokeMapBlobUrl(lastMapUrl0Revoke);
+        lastMapUrl0Revoke = "";
+      }
       resizeObserver?.disconnect();
       observedElements.clear();
       renderGate?.destroy();
@@ -412,14 +438,27 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
     let domWrites = 0;
 
     if (key !== lastMapKey || !lastMap) {
-      const mapStarted = performance.now();
-      // Served from the global cross-controller map cache (identity-stable,
-      // so the WebGL renderer skips re-uploading an unchanged map texture).
-      lastMap = getCachedDisplacementMap(engine, lens);
-      lastMapUrl = "";
-      lastMapKey = key;
-      stats.lastMapMs = performance.now() - mapStarted;
-      filterVersion += 1;
+      const now = performance.now();
+      if (lastMap && now - lastMapRegenAt < MAP_REGEN_MIN_INTERVAL_MS) {
+        // Mid-burst: keep the previous map on screen and regenerate once the
+        // interval elapses (trailing edge), so the final value always lands.
+        if (mapRegenTimer === null && typeof window !== "undefined") {
+          mapRegenTimer = window.setTimeout(() => {
+            mapRegenTimer = null;
+            scheduleApply();
+          }, MAP_REGEN_MIN_INTERVAL_MS);
+        }
+      } else {
+        const mapStarted = performance.now();
+        // Served from the global cross-controller map cache (identity-stable,
+        // so the WebGL renderer skips re-uploading an unchanged map texture).
+        lastMap = getCachedDisplacementMap(engine, lens);
+        lastMapUrl = "";
+        lastMapKey = key;
+        lastMapRegenAt = now;
+        stats.lastMapMs = performance.now() - mapStarted;
+        filterVersion += 1;
+      }
     }
 
     let activeRenderer = resolveRenderer(state);
@@ -541,8 +580,15 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
 
     let primitiveWrites = 0;
     if (lastMap && !lastMapUrl) {
-      lastMapUrl = displacementMapToPngDataUrl(lastMap);
+      // Deferred revocation: the previous blob stays fetchable while any
+      // in-flight decode/rebuild may still reference it.
+      const previousUrl = lastMapUrl0Revoke;
+      lastMapUrl = displacementMapToPngBlobUrl(lastMap);
+      lastMapUrl0Revoke = lastMapUrl;
       primitiveWrites += Number(setHref(elements.mapImage, lastMapUrl));
+      if (previousUrl && typeof window !== "undefined") {
+        window.setTimeout(() => revokeMapBlobUrl(previousUrl), 5000);
+      }
     }
     // Skip the ~14 attribute reads + string formatting in updateSvgGeometry
     // when the full set of geometry/optics inputs is unchanged (the DOM
@@ -788,7 +834,7 @@ export function createLiquidGlassController(options: LiquidGlassControllerOption
 
   /**
    * Chrome uniforms for the merged renderers, derived from the resolved
-   * tint: fill from `background`, border from `border` (1.5px band), rim
+   * tint: fill from `background`, border from `border` (1px band), rim
    * highlight from `highlight` (its alpha is the strength, floored at
    * MIN_RIM_STRENGTH so presets keep a subtle top rim), the lobe shape from
    * highlightSpread/Core/Width/Height, the light direction from the
@@ -979,7 +1025,7 @@ function normalizeOptions(
     lenses: options.lenses
       ? options.lenses.slice(0, 4).map((input) => normalizeLensInstance(input, lens))
       : undefined,
-    blend: Math.max(0, options.blend ?? 40),
+    blend: Math.max(0, options.blend ?? DEFAULT_MERGED_BLEND),
     tint: options.tint ? resolveGlassTint(options.tint) : undefined,
     safariRefresh: options.safariRefresh ?? isSafari(),
     respectReducedTransparency: options.respectReducedTransparency ?? true,
@@ -1077,7 +1123,7 @@ function updateSvgGeometry(
     setAttr(elements.mapMatrix, "values", colorMatrixStringForScale(scaleX, scaleY)),
   );
   primitiveWrites += Number(setAttr(elements.sourceBlur, "stdDeviation", String(lens.blur * 0.18)));
-  const baseScale = Math.max(scaleX, scaleY);
+  const baseScale = Math.max(Math.abs(scaleX), Math.abs(scaleY));
   primitiveWrites += Number(setAttr(elements.displacementR, "scale", baseScale * (1 + 0.2 * lens.chroma)));
   primitiveWrites += Number(setAttr(elements.displacementG, "scale", baseScale * (1 + 0.1 * lens.chroma)));
   primitiveWrites += Number(setAttr(elements.displacementB, "scale", baseScale));

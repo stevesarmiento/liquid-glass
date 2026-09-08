@@ -6,6 +6,7 @@ import {
   countGlassDraw,
   glassWebglContextCreated,
   glassWebglContextDestroyed,
+  glassWebglContextLost,
 } from "./perf-stats";
 import { CANVAS_STRENGTH } from "./render-utils";
 import {
@@ -319,6 +320,7 @@ export function createWebglGlassRenderer(
   const loseContextExt = safeGetLoseContextExtension(gl);
 
   const onContextLost = (event: Event): void => {
+    glassWebglContextLost();
     event.preventDefault?.();
     contextLost = true;
     // All GL objects are invalid after a loss; drop them so a restore rebuilds.
@@ -794,7 +796,7 @@ export function drawGlassPass(
     input.maskMode === "map"
       ? clampMergedScales(input.map, lens, geometry.width, geometry.height, strength)
       : clampLensScales(input.map, lens, { strength, generatingLens: input.mapLens });
-  const rawBaseScale = Math.max(clamped.scaleX, clamped.scaleY);
+  const rawBaseScale = Math.max(Math.abs(clamped.scaleX), Math.abs(clamped.scaleY));
   const baseScale = rawBaseScale * strength;
   const ratioX = rawBaseScale > 0 ? clamped.scaleX / rawBaseScale : 0;
   const ratioY = rawBaseScale > 0 ? clamped.scaleY / rawBaseScale : 0;

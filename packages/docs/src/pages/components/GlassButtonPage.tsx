@@ -1,9 +1,10 @@
 import { useRef, type ReactNode, type RefObject } from "react";
-import { GlassButton, type GlassButtonBackdrop } from "@liquid-glass/design-system";
+import { GlassButton, GLASS_BUTTON_SIZE_PRESETS, type GlassButtonBackdrop } from "@liquid-glass/design-system";
 import styled from "styled-components";
 
 import PreviewContainer from "../../components/PreviewContainer";
 import PropsTable, { type PropRow } from "../../components/PropsTable";
+import PresetTable from "../../components/PresetTable";
 
 const BACKDROP_IMAGE = "/images/rinaldo-armida.jpg";
 
@@ -212,6 +213,14 @@ const heroRef = useRef<HTMLDivElement>(null);
       <div>
         <h2>Props</h2>
         <PropsTable rows={PROP_ROWS} />
+      </div>
+      <div>
+        <h2>Size presets</h2>
+        <p>
+          Generated from the shipped presets in sizes.ts. Tier optics derive from one ratio
+          profile anchored at md, so every size renders the same material.
+        </p>
+        <PresetTable presets={GLASS_BUTTON_SIZE_PRESETS} />
       </div>
     </Stack>
   );

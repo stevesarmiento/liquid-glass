@@ -179,6 +179,25 @@ describe("clampScalesForMap", () => {
     // Half the span ⇒ texels are half as far apart ⇒ half the allowed scale.
     expect(narrow.scaleX).toBeCloseTo(wide.scaleX / 2, 6);
   });
+
+  it("clamps negative (demagnifying) scales by magnitude, preserving sign", () => {
+    const base = {
+      texelSlope: { x: 0.1, y: 0.1 },
+      mapWidth: 256,
+      mapHeight: 256,
+      spanWidth: 256,
+      spanHeight: 256,
+      chroma: 0,
+      maxSlope: 0.95,
+    };
+    const positive = clampScalesForMap({ ...base, scaleX: 512, scaleY: 512 });
+    const negative = clampScalesForMap({ ...base, scaleX: -512, scaleY: -512 });
+    expect(negative.scaleX).toBeCloseTo(-positive.scaleX, 10);
+    expect(negative.scaleY).toBeCloseTo(-positive.scaleY, 10);
+    // Under-cap negatives pass through untouched.
+    const gentle = clampScalesForMap({ ...base, scaleX: -2, scaleY: -2 });
+    expect(gentle).toEqual({ scaleX: -2, scaleY: -2 });
+  });
 });
 
 describe("clampMergedScales", () => {

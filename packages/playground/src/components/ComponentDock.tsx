@@ -13,7 +13,9 @@ import {
   DROPDOWN_PREVIEW_ITEMS,
   SWITCH_PREVIEW_SIZES,
   type ComponentVisibility,
+  type PreviewBackground,
 } from "../playgroundConfig";
+import { forwardLensOptics } from "../playgroundUtils";
 
 interface ComponentDockProps {
   backgroundUrl: string;
@@ -26,8 +28,13 @@ interface ComponentDockProps {
   onModalOpen: () => void;
   onSliderValueChange: (value: number) => void;
   pressHighlight: GlassPressHighlight;
+  /** Global held-active state for component previews (sidebar Global section). */
+  previewActive: boolean;
+  previewBackground: PreviewBackground;
   renderer: LiquidGlassRenderer;
   sliderValue: number;
+  /** Global source zoom for previews (Global section; 1 = off). */
+  sourceZoom: number;
   switchLensOverrideEnabled: boolean;
   visibility: ComponentVisibility;
 }
@@ -48,8 +55,11 @@ export const ComponentDock = memo(function ComponentDock({
   onModalOpen,
   onSliderValueChange,
   pressHighlight,
+  previewActive,
+  previewBackground,
   renderer,
   sliderValue,
+  sourceZoom,
   switchLensOverrideEnabled,
   visibility,
 }: ComponentDockProps) {
@@ -59,29 +69,37 @@ export const ComponentDock = memo(function ComponentDock({
     Number(visibility.button) +
     Number(visibility.dropdown) +
     Number(visibility.modal);
-  const sliderLens = useMemo(
-    () => ({
-      width: 63,
-      height: 34,
-      radius: 80,
-      ...smallControlLens(lens, { depth: 12, dome: 80, blur: 3, mapSize: 384 }),
-    }),
-    [lens],
+  // Mirrors switchLens: per-tier preset geometry AND optics until the user
+  // touches a stage slider — then stage optics forward (preset geometry
+  // stays per tier so sm..xl remain distinguishable).
+  const sliderLens = useMemo<Partial<LensParams> | undefined>(
+    () =>
+      switchLensOverrideEnabled
+        ? forwardLensOptics(lens, { depth: 12, dome: 80, blur: 3, mapSize: 384 })
+        : undefined,
+    [lens, switchLensOverrideEnabled],
   );
-  const switchLens = useMemo<Partial<LensParams>>(
-    () => smallControlLens(lens, { depth: 12, dome: 80, blur: 3, mapSize: 384 }),
-    [lens],
+  const switchLens = useMemo<Partial<LensParams> | undefined>(
+    () =>
+      switchLensOverrideEnabled
+        ? forwardLensOptics(lens, { depth: 12, dome: 80, blur: 3, mapSize: 384 })
+        : undefined,
+    [lens, switchLensOverrideEnabled],
   );
   const buttonLens = useMemo<Partial<LensParams>>(
-    () => smallControlLens(lens, { depth: 12, dome: 80, blur: 3, mapSize: 384 }),
+    () => forwardLensOptics(lens, { depth: 12, dome: 80, blur: 3, mapSize: 384 }),
     [lens],
   );
   const dropdownLens = useMemo<Partial<LensParams>>(
-    () => dropdownControlLens(lens),
+    () => forwardLensOptics(lens, { depth: 16, dome: 60, blur: 3, mapSize: 256 }),
     [lens],
   );
 
   if (visiblePreviewCount === 0) return null;
+
+  // Dark previews remount their components (key) so canvas-path backdrop
+  // color sampling re-runs against the new panel color.
+  const previewClass = previewBackground === "dark" ? "componentPreview previewDark" : "componentPreview";
 
   return (
     <div
@@ -90,25 +108,36 @@ export const ComponentDock = memo(function ComponentDock({
       onPointerMove={(event) => event.stopPropagation()}
     >
       {visibility.slider && (
-        <div className="sliderPreview componentPreview">
-          <GlassSlider
-            engineMode={engineMode}
-            glassLens={sliderLens}
-            glassSurfaceBlur={0}
-            glassTint={glassTint}
-            max={100}
-            min={0}
-            onValueChange={onSliderValueChange}
-            renderer={renderer}
-            sliderWidth="100%"
-            value={sliderValue}
-          />
+        <div className={`sliderPreview ${previewClass}`} key={`slider-${previewBackground}`}>
+          {SWITCH_PREVIEW_SIZES.map((size) => (
+            <div className="sliderPreviewRow" key={size}>
+              <span>{size}</span>
+              <GlassSlider
+                active={previewActive}
+                defaultValue={sliderValue}
+                glassSourceZoom={sourceZoom}
+                engineMode={engineMode}
+                glassLens={sliderLens}
+                glassSurfaceBlur={0}
+                glassTint={glassTint}
+                max={100}
+                min={0}
+                renderer={renderer}
+                size={size}
+                sliderWidth="100%"
+              />
+            </div>
+          ))}
         </div>
       )}
       {visibility.switch && (
         <SwitchPreviewStack
+          active={previewActive}
+          className={previewClass}
+          key={`switch-${previewBackground}`}
           engineMode={engineMode}
-          glassLens={switchLensOverrideEnabled ? switchLens : undefined}
+          sourceZoom={sourceZoom}
+          glassLens={switchLens}
           glassSurfaceBlur={0}
           glassTint={glassTint}
           renderer={renderer}
@@ -149,65 +178,47 @@ export const ComponentDock = memo(function ComponentDock({
         </div>
       )}
       {visibility.modal && (
-        <div className="modalPreview componentPreview">
-          <button className="modalPreviewButton" onClick={onModalOpen} type="button">
+        <div className="modalPreview">
+          <GlassButton
+            engineMode={engineMode}
+            glassBackdrop={{ image: backgroundUrl, anchor: containerRef }}
+            glassSurfaceBlur={0}
+            glassTint={glassTint}
+            onClick={onModalOpen}
+            pressHighlight={pressHighlight}
+            renderer={renderer}
+            size="md"
+          >
             Modal
-          </button>
+          </GlassButton>
         </div>
       )}
     </div>
   );
 });
 
-function SwitchPreviewStack(props: SwitchPreviewStackProps) {
+/** Held-active state and source zoom both come from the Global section. */
+function SwitchPreviewStack({
+  active,
+  className,
+  sourceZoom,
+  ...props
+}: SwitchPreviewStackProps & { active: boolean; className: string; sourceZoom: number }) {
   return (
-    <div className="switchPreview componentPreview" aria-label="Switch size previews">
+    <div className={`switchPreview ${className}`} aria-label="Switch size previews">
       {SWITCH_PREVIEW_SIZES.map((size: GlassComponentSize) => (
         <div className="switchPreviewRow" key={size}>
           <span>{size}</span>
-          <GlassSwitch active defaultChecked size={size} {...props} />
+          <GlassSwitch
+            active={active}
+            defaultChecked
+            glassSourceZoom={sourceZoom}
+            size={size}
+            {...props}
+          />
         </div>
       ))}
     </div>
   );
 }
 
-function smallControlLens(
-  lens: ResolvedLensParams,
-  caps: { depth: number; dome: number; blur: number; mapSize: number },
-): Partial<LensParams> {
-  return {
-    scaleX: lens.scaleX,
-    scaleY: lens.scaleY,
-    chroma: lens.chroma,
-    depth: Math.min(lens.depth, caps.depth),
-    dome: Math.min(lens.dome, caps.dome),
-    splay: lens.splay,
-    glow: lens.glow,
-    edge: lens.edge,
-    glowSpread: lens.glowSpread,
-    glowExponent: lens.glowExponent,
-    edgeExponent: lens.edgeExponent,
-    specularRotation: lens.specularRotation,
-    blur: Math.min(lens.blur, caps.blur),
-    mapSize: Math.min(lens.mapSize, caps.mapSize),
-  };
-}
-
-function dropdownControlLens(lens: ResolvedLensParams): Partial<LensParams> {
-  return {
-    scaleX: lens.scaleX,
-    scaleY: lens.scaleY,
-    chroma: lens.chroma,
-    depth: Math.min(lens.depth, 16),
-    dome: Math.min(lens.dome, 60),
-    glow: lens.glow,
-    edge: lens.edge,
-    glowSpread: lens.glowSpread,
-    glowExponent: lens.glowExponent,
-    edgeExponent: lens.edgeExponent,
-    specularRotation: lens.specularRotation,
-    blur: Math.min(lens.blur, 3),
-    mapSize: Math.min(lens.mapSize, 256),
-  };
-}

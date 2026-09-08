@@ -1,24 +1,34 @@
-import type {
-  ChangeEventHandler,
-  CSSProperties,
-  InputHTMLAttributes,
-  ReactNode
-} from "react";
+import type { ChangeEventHandler, CSSProperties, InputHTMLAttributes, ReactNode } from "react";
 import type {
   GlassRendererMode,
   GlassTint,
   GlassTintInput,
   GlassTintName,
   LensParams,
-  LiquidGlassEngineMode
+  LiquidGlassEngineMode,
 } from "liquid-glass";
+import type { GlassBackdrop } from "../../../lib/backdrop";
 import type { GlassComponentSize } from "../sizes";
 
-export interface GlassSliderProps
-  extends Omit<
-    InputHTMLAttributes<HTMLInputElement>,
-    "children" | "defaultValue" | "max" | "min" | "onChange" | "size" | "type" | "value"
-  > {
+export interface GlassSliderProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "children" | "defaultValue" | "max" | "min" | "onChange" | "size" | "type" | "value"
+> {
+  /** Holds the active glass stage for demos or externally controlled interactions. */
+  active?: boolean;
+  /**
+   * Uniform zoom of the glass source about the lens center (< 1 zooms out,
+   * showing a literal minified view of the track + surround; the lens optics
+   * then only carry edge character). Default 1.
+   */
+  glassSourceZoom?: number;
+  /**
+   * Same-origin image painted into the glass refraction source (CSS cover
+   * semantics against the anchor, like GlassButton's backdrop) so the glass
+   * refracts real content instead of a flat sampled surface color. Forces
+   * the canvas/webgl render path.
+   */
+  glassBackdrop?: GlassBackdrop;
   /** Initial value for uncontrolled sliders. */
   defaultValue?: number;
   /** Label rendered above the slider. */

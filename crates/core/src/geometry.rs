@@ -73,7 +73,11 @@ pub fn compute_lens_geometry(input: GeometryInput) -> LensGeometry {
     let left = center_x - width * 0.5;
     let top = center_y - height * 0.5;
     let bleed = if input.mode == RenderMode::Target {
-        target_bleed(&input.lens)
+        // Quantized UP to 64px steps for the FILTER REGION only (kept in
+        // lockstep with computeLensGeometry in ts-engine.ts): keeps the SVG
+        // filter region stable across scale/blur drags so the browser's
+        // rasterized filter inputs stay cached.
+        target_bleed(&input.lens).div_ceil(64) * 64
     } else {
         0
     };
@@ -143,7 +147,16 @@ pub fn color_matrix_for_scale(scale_x: f32, scale_y: f32) -> [f32; 20] {
 }
 
 pub fn target_bleed(params: &LensParams) -> u32 {
-    (params.scale_x.max(params.scale_y) * (1.0 + 0.2 * params.chroma) + params.blur * 3.0 + 4.0)
+    // MAGNITUDE, not signed max: a negative scale demagnifies, sampling
+    // OUTWARD past the lens edge, so it needs the same bleed as its positive
+    // twin. Using the signed max made `-180` yield a negative value that
+    // saturated to 0 on the u32 cast, collapsing the filter region onto the
+    // lens box — outward samples then landed outside the region and rendered
+    // transparent (the backdrop showed through at the rim).
+    // Keep in sync with `targetBleed` in src/engine/ts-engine.ts.
+    (params.scale_x.abs().max(params.scale_y.abs()) * (1.0 + 0.2 * params.chroma)
+        + params.blur * 3.0
+        + 4.0)
         .ceil() as u32
 }
 
@@ -164,6 +177,23 @@ mod tests {
 
         // 20 * 1.1 + 2.1 * 3 + 4 = 32.3 -> 33
         assert_eq!(target_bleed(&lens), 33);
+    }
+
+    #[test]
+    fn target_bleed_uses_scale_magnitude_for_negative_scales() {
+        // Demagnifying lenses sample outward and need identical bleed.
+        let positive = LensParams {
+            scale_x: 180.0,
+            scale_y: 180.0,
+            ..LensParams::default()
+        };
+        let negative = LensParams {
+            scale_x: -180.0,
+            scale_y: -180.0,
+            ..LensParams::default()
+        };
+        assert_eq!(target_bleed(&positive), target_bleed(&negative));
+        assert!(target_bleed(&negative) > 0);
     }
 
     #[test]
@@ -225,7 +255,8 @@ mod tests {
         assert!(geometry.filter_width >= 0.0);
         assert!(geometry.filter_x + geometry.filter_width <= 200.0);
         assert!(geometry.filter_y + geometry.filter_height <= 120.0);
-        assert_eq!(geometry.bleed, target_bleed(&lens));
+        // The region bleed is the exact bleed quantized up to the 64px grid.
+        assert_eq!(geometry.bleed, target_bleed(&lens).div_ceil(64) * 64);
 
         // Lens fully outside the container collapses to an empty filter region.
         let outside = compute_lens_geometry(GeometryInput {

@@ -86,7 +86,9 @@ export const LIQUID_GLASS_STYLES = `.lg-glass-surface {
   pointer-events: none;
   background: var(--lg-glass-highlight);
   border-radius: 999px;
-  filter: blur(10px);
+  /* Fixed blur reads as fog on thumb-sized surfaces; GlassNode scales the
+     var with the lens short side (10px stays the large-surface default). */
+  filter: blur(var(--lg-glass-shine-blur, 10px));
   opacity: 0.62;
   transform: rotate(var(--lg-glass-highlight-rotation));
   mask-image: radial-gradient(ellipse at center, #000 0%, #000 var(--lg-glass-highlight-core), transparent var(--lg-glass-highlight-spread));

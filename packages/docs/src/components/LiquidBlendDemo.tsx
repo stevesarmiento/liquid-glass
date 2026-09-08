@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { PointerEvent } from "react";
-import { createLiquidGlassController, type LiquidGlassController } from "liquid-glass";
+import { DEFAULT_MERGED_BLEND, createLiquidGlassController, type LiquidGlassController } from "liquid-glass";
 import styled from "styled-components";
 
 const SCENE_URL = "/images/rinaldo-armida.jpg";
-const INITIAL_BLEND = 48;
+// The demo starts at the controller's real default so the page's prose
+// ("blend defaults to 40") matches what the slider shows.
+const INITIAL_BLEND = DEFAULT_MERGED_BLEND;
 
 const SHARED_LENS = {
   width: 120,

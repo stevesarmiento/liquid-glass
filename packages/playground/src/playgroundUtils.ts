@@ -1,11 +1,68 @@
-import type { ResolvedLensParams } from "liquid-glass";
+import { DEFAULT_LENS_PARAMS, type LensParams, type ResolvedLensParams } from "liquid-glass";
 
 import {
+  CONTROL_GROUPS,
   FLOATING_CONTROLS_BAR_HEIGHT,
   FLOATING_CONTROLS_MARGIN,
   FLOATING_CONTROLS_WIDTH,
   type FloatingControlsPosition,
 } from "./playgroundConfig";
+
+/** Deep equality over the lens param fields (used to highlight the active stage preset). */
+export function lensEquals(a: ResolvedLensParams, b: ResolvedLensParams): boolean {
+  return (Object.keys(DEFAULT_LENS_PARAMS) as Array<keyof ResolvedLensParams>).every(
+    (key) => a[key] === b[key],
+  );
+}
+
+/**
+ * Serializes the stage lens as a paste-ready TS `Partial<LensParams>`,
+ * emitting only fields that differ from `baseline` (default: the package
+ * defaults), in the control panel's display order.
+ */
+export function formatLensPresetTs(
+  lens: ResolvedLensParams,
+  options: { baseline?: ResolvedLensParams; name?: string } = {},
+): string {
+  const baseline = options.baseline ?? DEFAULT_LENS_PARAMS;
+  const name = options.name ?? "preset";
+  const fields = CONTROL_GROUPS.flat()
+    .filter((key) => lens[key] !== baseline[key])
+    .map((key) => `  ${key}: ${lens[key]},`);
+  return [
+    "// liquid-glass preset — fields differing from the package defaults",
+    `const ${name}: Partial<LensParams> = {`,
+    ...fields,
+    "};",
+    "",
+  ].join("\n");
+}
+
+/** Optics forwarded by `forwardLensOptics` — everything except geometry. */
+export type ForwardedLensOptics = Partial<Omit<LensParams, "width" | "height" | "radius">>;
+
+export type LensOpticsCaps = Partial<Pick<ResolvedLensParams, "depth" | "dome" | "blur" | "mapSize">>;
+
+/**
+ * Forwards every optic of the stage lens except geometry (width/height/
+ * radius), applying optional per-surface perf caps. Geometry stays owned by
+ * each preview surface. Iterates DEFAULT_LENS_PARAMS keys so a param added to
+ * the engine is forwarded automatically — the old per-surface hand-rolled
+ * copies each silently dropped `maxSlope`, splitting the physics between the
+ * stage and its previews.
+ */
+export function forwardLensOptics(
+  lens: ResolvedLensParams,
+  caps: LensOpticsCaps = {},
+): ForwardedLensOptics {
+  const optics: ForwardedLensOptics = {};
+  for (const key of Object.keys(DEFAULT_LENS_PARAMS) as Array<keyof ResolvedLensParams>) {
+    if (key === "width" || key === "height" || key === "radius") continue;
+    const cap = caps[key as keyof LensOpticsCaps];
+    optics[key] = cap === undefined ? lens[key] : Math.min(lens[key], cap);
+  }
+  return optics;
+}
 
 export function formatValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);

@@ -289,7 +289,7 @@ Constraints and behavior:
   works in plain single-lens mode as an alias of `setPosition`.
 - `tint` accepts a preset name, a `GlassTintInput`, or a resolved `GlassTint`
   (same as the React components). The controller derives the chrome from it:
-  fill from `background`, a 1.5px border from `border`, rim highlight color
+  fill from `background`, a 1px border from `border`, rim highlight color
   and strength from `highlight` (its alpha, floored at a subtle 0.18 so
   presets with transparent highlights still catch light at the top), the lobe
   shape from `highlightSpread`/`highlightCore`/`highlightWidth`/

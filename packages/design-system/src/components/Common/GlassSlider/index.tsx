@@ -8,7 +8,7 @@ import {
   useId,
   useMemo,
   useRef,
-  useState
+  useState,
 } from "react";
 import { type GlassCanvasSource, type LensParams } from "liquid-glass";
 import {
@@ -16,7 +16,7 @@ import {
   createGlassPointerVelocityTracker,
   useGlassDeformation,
   useGlassPress,
-  type GlassPointerVelocityTracker
+  type GlassPointerVelocityTracker,
 } from "liquid-glass/react";
 
 import {
@@ -37,11 +37,20 @@ import {
   glassContentClassName,
   glassNodeClassName,
   glassSurfaceClassName,
-  sliderGlobalCss
+  sliderGlobalCss,
 } from "./styles";
 import type { GlassSliderProps } from "./types";
 import { GLASS_SLIDER_SIZE_PRESETS } from "../sizes";
-import { drawRoundedRect, getCanvasBackgroundColor } from "../../../lib/canvas";
+import { computeCoverSlice, drawRoundedRect, getCanvasBackgroundColor } from "../../../lib/canvas";
+import {
+  findAncestorBackdropImage,
+  getBackdropImage,
+  isBackdropImageReady,
+  peekBackdropImage,
+  type AutoGlassBackdrop,
+  type EffectiveGlassBackdrop,
+} from "../../../lib/backdrop";
+import { glassSourcePad } from "../../../lib/glassSourcePad";
 import { useGlobalCssOnce } from "../../../lib/globalCss";
 import { safeReleasePointerCapture, safeSetPointerCapture } from "../../../lib/pointer";
 import useGlassTheme from "../../../hooks/useGlassTheme";
@@ -54,19 +63,12 @@ const KEYBOARD_ACTIVE_RELEASE_MS = 320;
 const DEFORMATION_MAX_PX = 10;
 const DEFORMATION_FALLOFF_PX = 80;
 const DEFORMATION_LAG_MAX_PX = 4;
-// mapSize deliberately omitted: GlassNode derives it from the lens size in
-// device pixels (autoMapSize), keeping thumb-sized maps small and cacheable.
-const DEFAULT_SLIDER_OPTICS: Omit<LensParams, "width" | "height" | "radius" | "mapSize"> = {
-  scaleX: 38,
-  scaleY: 38,
-  chroma: 0.45,
-  depth: 3.5,
-  dome: 0,
-  splay: 0.49,
-  glow: 0.55,
-  edge: 0.55,
-  blur: 0.8
-};
+/**
+ * Active thumb swell (uniform): rest uses the (Sep 2026, shrunk) preset
+ * geometry; active restores the previous tier sizes — 1.16 reproduces every
+ * old tier within a pixel (e.g. md 46×26 -> ~54×30).
+ */
+const ACTIVE_LENS_SCALE = 1.16;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -89,7 +91,7 @@ function snapValueToStep(
   value: number,
   min: number,
   max: number,
-  step: InputHTMLAttributes<HTMLInputElement>["step"]
+  step: InputHTMLAttributes<HTMLInputElement>["step"],
 ): number {
   const clampedValue = clamp(value, min, max);
   if (step === "any") return clampedValue;
@@ -112,7 +114,10 @@ const SliderVisual = ({ inert = false }: { inert?: boolean }) => (
 );
 
 const GlassSlider = ({
+  active,
   className,
+  glassBackdrop,
+  glassSourceZoom = 1,
   controlHeight,
   defaultValue,
   disabled = false,
@@ -166,21 +171,31 @@ const GlassSlider = ({
   const currentValueRef = useRef(initialValue);
   const [uncontrolledValue, setUncontrolledValue] = useState(initialValue);
   const [controlSize, setControlSize] = useState({ height: 0, width: 0 });
+  const [, setBackdropLoadVersion] = useState(0);
+  // Ancestor background-image discovery: image backdrops are dynamic when
+  // the image is an ANCESTOR's CSS background (sibling layers still need the
+  // glassBackdrop prop — visual stacking is not DOM ancestry).
+  const [autoBackdrop, setAutoBackdrop] = useState<AutoGlassBackdrop | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   // Keyboard engagement (pressed + 320ms post-release hold) comes from the
   // material press state machine; the slider drives it imperatively, so the
   // press tween is skipped (only the boolean is consumed).
-  const keyboardPress = useGlassPress({ holdMs: KEYBOARD_ACTIVE_RELEASE_MS, tween: false });
+  const keyboardPress = useGlassPress({
+    forcePressed: active === true,
+    holdMs: KEYBOARD_ACTIVE_RELEASE_MS,
+    tween: false
+  });
   const currentValue = isControlled ? value : uncontrolledValue;
   currentValueRef.current = currentValue;
 
   const valuePercent = getPercent(currentValue, min, max);
   const valueRatio = valuePercent / 100;
   const sizePreset = GLASS_SLIDER_SIZE_PRESETS[size];
+  // Size presets carry the full per-tier optics (derived from
+  // SLIDER_OPTICS_PROFILE in sizes.ts); glassLens overrides on top.
   const lens = {
-    ...DEFAULT_SLIDER_OPTICS,
     ...sizePreset.lens,
-    ...glassLens
+    ...glassLens,
   };
   const isGlassActive = !disabled && (isDragging || keyboardPress.pressed);
   const deformation = useGlassDeformation(deformRef, {
@@ -189,7 +204,7 @@ const GlassSlider = ({
     maxPx: DEFORMATION_MAX_PX,
     falloffPx: DEFORMATION_FALLOFF_PX,
     lagEnabled: materialLag,
-    lagMaxPx: DEFORMATION_LAG_MAX_PX
+    lagMaxPx: DEFORMATION_LAG_MAX_PX,
   });
   const formattedValue = valueFormatter ? valueFormatter(currentValue) : currentValue;
   const formattedValueText =
@@ -199,7 +214,9 @@ const GlassSlider = ({
   const resolvedControlHeight = controlHeight ?? Math.max(sizePreset.controlHeight, lens.height);
   const resolvedSliderWidthValue = sliderWidth ?? sizePreset.sliderWidth;
   const resolvedSliderWidth =
-    typeof resolvedSliderWidthValue === "number" ? `${resolvedSliderWidthValue}px` : String(resolvedSliderWidthValue);
+    typeof resolvedSliderWidthValue === "number"
+      ? `${resolvedSliderWidthValue}px`
+      : String(resolvedSliderWidthValue);
   const resolvedTrackHeight = trackHeight ?? sizePreset.trackHeight;
   const lensGeometry = useMemo(() => {
     const travel = Math.max(0, controlSize.width - lens.width);
@@ -210,11 +227,16 @@ const GlassSlider = ({
       lensCenterX: lensX + lens.width / 2,
       lensTravelCenterX: travel / 2,
       lensX,
-      lensY
+      lensY,
     };
   }, [controlSize.height, controlSize.width, lens.height, lens.width, valueRatio]);
   const lensSourceX =
     lensGeometry.lensTravelCenterX + (lensGeometry.lensX - lensGeometry.lensTravelCenterX) * 0.86;
+  const lensScale = isGlassActive ? ACTIVE_LENS_SCALE : 1;
+  const renderedLensWidth = lens.width * lensScale;
+  const renderedLensHeight = lens.height * lensScale;
+  const renderedLensX = lensGeometry.lensX - (renderedLensWidth - lens.width) / 2;
+  const renderedLensY = lensGeometry.lensY - (renderedLensHeight - lens.height) / 2;
   const canRenderGlass = isGlassActive && controlSize.width > 0 && controlSize.height > 0;
 
   // Style sampling hoisted out of the draw path (drawSource runs per drag
@@ -226,26 +248,75 @@ const GlassSlider = ({
       return {
         trackColor: hostStyle.getPropertyValue("--lgds-slider-track-bg").trim() || resolvedTrackColor,
         fillColor: hostStyle.getPropertyValue("--lgds-slider-fill-bg").trim() || resolvedFillColor,
-        sourceBackground: getCanvasBackgroundColor(control)
+        sourceBackground: getCanvasBackgroundColor(control),
       };
     },
-    [theme, resolvedTrackColor, resolvedFillColor, controlSize.width, controlSize.height]
+    [theme, resolvedTrackColor, resolvedFillColor, controlSize.width, controlSize.height],
   );
 
+  // Demagnifying lenses sample beyond the control; pad the source world so
+  // the rim shows backdrop, not the clone's edge.
+  // Active swell can poke past the control at the travel extremes; the pad
+  // covers the overhang (see the switch's identical treatment).
+  const lensOverhang = Math.max(
+    0,
+    -renderedLensX,
+    -renderedLensY,
+    renderedLensX + renderedLensWidth - controlSize.width,
+    renderedLensY + renderedLensHeight - controlSize.height,
+  );
+  const zoomReach =
+    glassSourceZoom < 1
+      ? (1 / Math.max(0.05, glassSourceZoom) - 1) *
+        (Math.max(renderedLensWidth, renderedLensHeight) / 2)
+      : 0;
+  const sourcePad = glassSourcePad(lens, lensOverhang, zoomReach);
   // valuePercent changes per drag frame, so drag repaints are preserved.
-  const sourceVersion = `${valuePercent}|${sourceStyles.key}|${resolvedTrackHeight}`;
+  const effectiveBackdrop: EffectiveGlassBackdrop | undefined =
+    glassBackdrop ?? autoBackdrop ?? undefined;
+  // With a backdrop the cover slice is sampled from live layout rects at
+  // draw time, so that path keeps closure-identity keying (button pattern).
+  const sourceVersion = effectiveBackdrop
+    ? undefined
+    : `${valuePercent}|${sourceStyles.key}|${resolvedTrackHeight}|${sourcePad}|${glassSourceZoom}`;
+  // Backdrop refraction needs pixel sampling; the DOM-clone SVG path cannot
+  // draw the image, so backdrop forces the canvas/webgl path (like GlassButton).
+  const resolvedRenderer =
+    effectiveBackdrop && (renderer === undefined || renderer === "auto") ? "webgl" : renderer;
 
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
     const styles = sourceStyles.get();
     const trackColor = styles?.trackColor ?? resolvedTrackColor;
     const fillColor = styles?.fillColor ?? resolvedFillColor;
     const sourceBackground = styles?.sourceBackground ?? "#ffffff";
-    const trackLeft = metrics.lensWidth / 2;
-    const trackWidth = Math.max(0, metrics.sourceWidth - metrics.lensWidth);
+    // Track coordinates live in control space, offset by the source pad.
+    const trackLeft = sourcePad + metrics.lensWidth / 2;
+    const trackWidth = Math.max(0, metrics.sourceWidth - sourcePad * 2 - metrics.lensWidth);
     const trackTop = metrics.sourceHeight / 2 - resolvedTrackHeight / 2;
 
     ctx.fillStyle = sourceBackground;
     ctx.fillRect(0, 0, metrics.sourceWidth, metrics.sourceHeight);
+    const control = controlRef.current;
+    if (effectiveBackdrop && control) {
+      const image = peekBackdropImage(effectiveBackdrop.image);
+      if (isBackdropImageReady(image)) {
+        const anchorElement =
+          effectiveBackdrop.anchorElement ??
+          effectiveBackdrop.anchor?.current ??
+          (control.offsetParent as HTMLElement | null) ??
+          control;
+        const rect = control.getBoundingClientRect();
+        // Target = the PADDED source box, so the demagnify surround shows
+        // real backdrop instead of the flat fill.
+        const slice = computeCoverSlice({
+          imageWidth: image.naturalWidth,
+          imageHeight: image.naturalHeight,
+          anchor: anchorElement.getBoundingClientRect(),
+          target: { left: rect.left - sourcePad, top: rect.top - sourcePad }
+        });
+        ctx.drawImage(image, slice.x, slice.y, slice.width, slice.height);
+      }
+    }
     drawRoundedRect(ctx, trackLeft, trackTop, trackWidth, resolvedTrackHeight, resolvedTrackHeight / 2);
     ctx.fillStyle = trackColor;
     ctx.fill();
@@ -255,7 +326,7 @@ const GlassSlider = ({
       trackTop,
       trackWidth * (valuePercent / 100),
       resolvedTrackHeight,
-      resolvedTrackHeight / 2
+      resolvedTrackHeight / 2,
     );
     ctx.fillStyle = fillColor;
     ctx.fill();
@@ -292,12 +363,23 @@ const GlassSlider = ({
     const pointerRatio = clamp(pointerOffset / travel, 0, 1);
     // Signed px past the thumb's clamp point: negative pulls past min,
     // positive pulls past max, 0 anywhere inside the travel range.
-    const overshootPx = pointerOffset < 0 ? pointerOffset : pointerOffset > travel ? pointerOffset - travel : 0;
+    const overshootPx =
+      pointerOffset < 0 ? pointerOffset : pointerOffset > travel ? pointerOffset - travel : 0;
     deformation.setPull(overshootPx, velocityTrackerRef.current?.sample(clientX));
     const nextValue = snapValueToStep(min + pointerRatio * (max - min), min, max, step);
 
     if (applyValue(nextValue)) dispatchInputChange(nextValue);
   };
+
+  const backdropImageUrl = effectiveBackdrop?.image;
+  useEffect(() => {
+    if (!backdropImageUrl || typeof window === "undefined") return undefined;
+    const image = getBackdropImage(backdropImageUrl);
+    if (image.complete && image.naturalWidth > 0) return undefined;
+    const handleLoad = () => setBackdropLoadVersion((version) => version + 1);
+    image.addEventListener("load", handleLoad);
+    return () => image.removeEventListener("load", handleLoad);
+  }, [backdropImageUrl]);
 
   useEffect(() => {
     const control = controlRef.current;
@@ -306,6 +388,12 @@ const GlassSlider = ({
     const updateSize = () => {
       const rect = control.getBoundingClientRect();
       setControlSize({ height: rect.height, width: rect.width });
+      const discovered = findAncestorBackdropImage(control);
+      setAutoBackdrop((previous) =>
+        previous?.image === discovered?.image && previous?.anchorElement === discovered?.anchorElement
+          ? previous
+          : discovered,
+      );
     };
     updateSize();
 
@@ -400,16 +488,18 @@ const GlassSlider = ({
           "--lgds-slider-percent": `${valuePercent}%`,
           "--lgds-slider-hit-area": `${resolvedControlHeight}px`,
           "--lgds-slider-lens-height": `${lens.height}px`,
-          "--lgds-slider-lens-left": `${lensGeometry.lensX}px`,
+          "--lgds-slider-lens-box-height": `${renderedLensHeight}px`,
+          "--lgds-slider-lens-box-width": `${renderedLensWidth}px`,
+          "--lgds-slider-lens-left": `${renderedLensX}px`,
           "--lgds-slider-lens-radius": `${lens.radius}px`,
-          "--lgds-slider-lens-top": `${lensGeometry.lensY}px`,
+          "--lgds-slider-lens-top": `${renderedLensY}px`,
           "--lgds-slider-lens-width": `${lens.width}px`,
           "--lgds-slider-fill-bg": resolvedFillColor,
           "--lgds-slider-track-height": `${resolvedTrackHeight}px`,
           "--lgds-slider-track-bg": resolvedTrackColor,
           "--lgds-slider-text": theme.component.text,
           "--lgds-slider-muted": theme.component.textMuted,
-          ...style
+          ...style,
         } as CSSProperties
       }
     >
@@ -444,18 +534,31 @@ const GlassSlider = ({
                   drawSource={drawSource}
                   engineMode={engineMode}
                   sourceVersion={sourceVersion}
-                  lens={lens}
-                  lensX={lensSourceX}
-                  lensY={lensGeometry.lensY}
-                  renderer={renderer}
+                  lens={{ ...lens, width: renderedLensWidth, height: renderedLensHeight }}
+                  lensX={lensSourceX - (renderedLensWidth - lens.width) / 2 + sourcePad}
+                  lensY={renderedLensY + sourcePad}
+                  renderer={resolvedRenderer}
+                  sourceZoom={glassSourceZoom}
                   sourceChildren={
-                    <>
-                      <LensSourceBackground />
-                      <SliderVisual inert />
-                    </>
+                    effectiveBackdrop ? undefined : (
+                      <>
+                        <LensSourceBackground />
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: sourcePad,
+                          top: sourcePad,
+                          width: controlSize.width,
+                          height: controlSize.height,
+                        }}
+                      >
+                          <SliderVisual inert />
+                        </span>
+                      </>
+                    )
                   }
-                  sourceHeight={controlSize.height}
-                  sourceWidth={controlSize.width}
+                  sourceHeight={controlSize.height + sourcePad * 2}
+                  sourceWidth={controlSize.width + sourcePad * 2}
                   surfaceClassName={glassSurfaceClassName}
                   surfaceBlur={glassSurfaceBlur}
                   surfaceTone="clear"

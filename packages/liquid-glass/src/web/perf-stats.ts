@@ -25,6 +25,7 @@ const counters = {
   mapSettleRebuilds: 0,
   webglContextsCreated: 0,
   webglContextsDestroyed: 0,
+  webglContextsLost: 0,
 };
 
 export function countGlassDraw(backend: GlassDrawBackend, count = 1): void {
@@ -63,6 +64,11 @@ export function glassWebglContextDestroyed(): void {
   counters.webglContextsDestroyed += 1;
 }
 
+/** WebGL context-loss events on glass GL canvases (shared compositor / controller). */
+export function glassWebglContextLost(): void {
+  counters.webglContextsLost += 1;
+}
+
 export interface GlassPerfSnapshot {
   draws: { svg: number; canvas: number; webgl: number };
   maps: {
@@ -80,7 +86,7 @@ export interface GlassPerfSnapshot {
     settleRebuilds: number;
   };
   blur: { cacheHits: number; cacheMisses: number };
-  webglContexts: { created: number; destroyed: number; active: number };
+  webglContexts: { created: number; destroyed: number; active: number; lost: number };
   /** Current adaptive quality level (0 full … 3 surface-only). */
   qualityLevel: number;
 }
@@ -109,6 +115,7 @@ export function getGlassPerfSnapshot(): GlassPerfSnapshot {
       created: counters.webglContextsCreated,
       destroyed: counters.webglContextsDestroyed,
       active: counters.webglContextsCreated - counters.webglContextsDestroyed,
+      lost: counters.webglContextsLost,
     },
     qualityLevel: getGlassQualityLevel(),
   };

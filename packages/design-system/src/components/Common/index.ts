@@ -1,6 +1,6 @@
 export { default as GlassButton } from "./GlassButton";
 export type { GlassButtonBackdrop, GlassButtonProps, GlassButtonVariant } from "./GlassButton/types";
-export { default as GlassDropdown } from "./GlassDropdown";
+export { default as GlassDropdown, DEFAULT_DROPDOWN_OPTICS } from "./GlassDropdown";
 export type {
   GlassDropdownBackdrop,
   GlassDropdownItem,

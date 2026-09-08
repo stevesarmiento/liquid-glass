@@ -74,15 +74,20 @@ pub fn normalize_lens_params(input: PartialLensParams) -> LensParams {
     let height = finite_or(input.height, defaults.height).clamp(1.0, 4096.0);
     let max_radius = width.min(height) * 0.5;
     let radius = finite_or(input.radius, defaults.radius).clamp(0.0, max_radius);
-    let depth = finite_or(input.depth, defaults.depth).clamp(0.0, max_radius);
+    // Depth caps at the FULL short side (not half): past min(w,h)/2 the erf
+    // falloff sigma keeps softening the ramp. Kept in lockstep with
+    // LENS_PARAM_LIMITS in the TS engine.
+    let depth = finite_or(input.depth, defaults.depth).clamp(0.0, width.min(height));
     let map_size = input.map_size.unwrap_or(defaults.map_size).clamp(8, 2048);
 
     LensParams {
         width,
         height,
         radius,
-        scale_x: finite_or(input.scale_x, defaults.scale_x).clamp(0.0, 512.0),
-        scale_y: finite_or(input.scale_y, defaults.scale_y).clamp(0.0, 512.0),
+        // Negative scale = demagnify (render-time sample direction flip);
+        // kept in lockstep with the TS engine's -512..512 range.
+        scale_x: finite_or(input.scale_x, defaults.scale_x).clamp(-512.0, 512.0),
+        scale_y: finite_or(input.scale_y, defaults.scale_y).clamp(-512.0, 512.0),
         chroma: finite_or(input.chroma, defaults.chroma).clamp(0.0, 8.0),
         depth,
         dome: finite_or(input.dome, defaults.dome).clamp(0.0, 4096.0),

@@ -23,15 +23,36 @@ export const CONTROL_GROUPS: Array<Array<keyof LensParams>> = [
   ["depth", "dome", "splay", "glow", "edge", "glowSpread", "glowExponent", "edgeExponent", "specularRotation"],
 ];
 
-export const CONTROL_LIMITS: Record<keyof LensParams, { min: number; max: number; step: number }> = {
-  width: { min: 24, max: 420, step: 1 },
-  height: { min: 24, max: 300, step: 1 },
-  radius: { min: 0, max: 210, step: 1 },
-  scaleX: { min: 0, max: 240, step: 0.5 },
-  scaleY: { min: 0, max: 240, step: 0.5 },
+export type ControlLimit = {
+  min: number;
+  max: number;
+  step: number;
+  /**
+   * Perceptual taper exponent: the slider maps its travel through t^taper, so
+   * a taper of 2 spends half the physical travel on the first quarter of the
+   * range — fine control near zero (where depth/dome are most sensitive),
+   * coarse at the top.
+   */
+  taper?: number;
+};
+
+export const CONTROL_LIMITS: Record<keyof LensParams, ControlLimit> = {
+  // Big lenses ("a bigger clip") are the raw material for demagnified looks:
+  // the surround a negative scale can pull in is |scale| / 2 px per side, and
+  // a larger lens keeps edge gradients gentle so the no-fold guard doesn't
+  // crush the effective scale. Engine limits are wider still (4096 / ±512).
+  width: { min: 24, max: 1000, step: 1 },
+  height: { min: 24, max: 1000, step: 1 },
+  radius: { min: 0, max: 500, step: 1 },
+  // Negative scale = demagnify (zoom-out): the lens samples outward and
+  // shows a shrunken, wide-angle view of the backdrop. Full engine range.
+  scaleX: { min: -512, max: 512, step: 0.5 },
+  scaleY: { min: -512, max: 512, step: 0.5 },
   chroma: { min: 0, max: 2, step: 0.01 },
-  depth: { min: 0, max: 80, step: 0.5 },
-  dome: { min: 0, max: 220, step: 1 },
+  // Engine caps depth at min(width, height) of the lens; matches the widest
+  // stage lens so the ramp can always reach a full-face gradient.
+  depth: { min: 0, max: 1000, step: 0.5, taper: 2 },
+  dome: { min: 0, max: 500, step: 1, taper: 2 },
   splay: { min: 0.001, max: 1, step: 0.001 },
   glow: { min: 0, max: 2, step: 0.01 },
   edge: { min: 0, max: 2, step: 0.01 },
@@ -63,6 +84,7 @@ export type FloatingControlsDrag = {
   originX: number;
   originY: number;
 };
+export type PreviewBackground = "light" | "dark";
 export type VisibilityKey = "glass" | "slider" | "switch" | "button" | "dropdown" | "modal";
 export type ComponentVisibility = Record<VisibilityKey, boolean>;
 
@@ -93,8 +115,28 @@ export const INITIAL_LENS: ResolvedLensParams = {
   // ~10); keep the cap above it so the no-fold guard stays a no-op here.
   maxSlope: 16,
   blur: 1.3,
-  mapSize: 1024,
+  // 512, not 1024: at a 220px lens even retina only needs 512 (autoMapSize
+  // math), and 1024 was the one constant across every black-glass incident —
+  // million-pixel filter surfaces under interaction churn read as GPU raster
+  // pressure. The slider still reaches 1024 for deliberate stress tests.
+  mapSize: 512,
 };
+
+export type LensStagePresetId = "reference" | "package-defaults";
+
+/**
+ * Stage lens presets. "reference" is the playground's tuned liquid look
+ * (heavy fold, maxSlope 16); "package-defaults" is DEFAULT_LENS_PARAMS
+ * unmodified — the true shipped look, so both are reachable while tuning.
+ */
+export const LENS_STAGE_PRESETS: Array<{
+  id: LensStagePresetId;
+  label: string;
+  lens: ResolvedLensParams;
+}> = [
+  { id: "reference", label: "Reference", lens: INITIAL_LENS },
+  { id: "package-defaults", label: "Package defaults", lens: DEFAULT_LENS_PARAMS },
+];
 
 export const TINT_NAMES = Object.keys(GLASS_TINTS) as GlassTintName[];
 
@@ -143,6 +185,8 @@ export const INITIAL_LENS_POSITIONS = [
   { x: 0.44, y: 0.5 },
   { x: 0.56, y: 0.5 },
 ];
+// Deliberately above the controller's DEFAULT_MERGED_BLEND (40): a tuning
+// preset for the dual-lens stage, not a claim about the shipped default.
 export const INITIAL_BLEND = 48;
 export const STATS_FLUSH_MS = 250;
 

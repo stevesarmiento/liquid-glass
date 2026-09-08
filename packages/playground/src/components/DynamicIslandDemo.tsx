@@ -9,7 +9,7 @@ import { GlassNode, type GlassNodeProps } from "liquid-glass/react";
 import { IconLocationFill, IconSunMaxFill } from "symbols-react";
 
 import { INITIAL_ISLAND_SIZE, LOCATION_MAP_URL, type IslandDemo, type IslandSize } from "../playgroundConfig";
-import { computeCoverSlice } from "../playgroundUtils";
+import { computeCoverSlice, forwardLensOptics } from "../playgroundUtils";
 
 interface DynamicIslandDemoProps {
   backgroundUrl: string;
@@ -44,20 +44,7 @@ export const DynamicIslandDemo = memo(function DynamicIslandDemo({
       width: Math.max(1, islandSize.width),
       height: Math.max(1, islandSize.height),
       radius: lens.radius,
-      scaleX: lens.scaleX,
-      scaleY: lens.scaleY,
-      chroma: lens.chroma,
-      depth: lens.depth,
-      dome: lens.dome,
-      splay: lens.splay,
-      glow: lens.glow,
-      edge: lens.edge,
-      glowSpread: lens.glowSpread,
-      glowExponent: lens.glowExponent,
-      edgeExponent: lens.edgeExponent,
-      specularRotation: lens.specularRotation,
-      blur: lens.blur,
-      mapSize: lens.mapSize,
+      ...forwardLensOptics(lens),
     }),
     [islandSize.height, islandSize.width, lens],
   );

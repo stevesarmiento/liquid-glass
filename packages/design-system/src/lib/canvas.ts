@@ -4,7 +4,7 @@ export function drawRoundedRect(
   y: number,
   width: number,
   height: number,
-  radius: number
+  radius: number,
 ): void {
   const r = Math.max(0, Math.min(radius, width / 2, height / 2));
 
@@ -60,7 +60,7 @@ export function computeCoverSlice(input: {
     x: anchor.left + (anchor.width - width) / 2 - target.left,
     y: anchor.top + (anchor.height - height) / 2 - target.top,
     width,
-    height
+    height,
   };
 }
 

@@ -8,7 +8,7 @@ import {
   useId,
   useMemo,
   useRef,
-  useState
+  useState,
 } from "react";
 import { type GlassCanvasSource } from "liquid-glass";
 import { GlassNode, useGlassDeformation, useGlassPress } from "liquid-glass/react";
@@ -29,18 +29,31 @@ import {
   glassContentClassName,
   glassNodeClassName,
   glassSurfaceClassName,
-  switchGlobalCss
+  switchGlobalCss,
 } from "./styles";
 import type { GlassSwitchProps } from "./types";
 import { GLASS_SWITCH_SIZE_PRESETS } from "../sizes";
-import { drawRoundedRect, getCanvasBackgroundColor } from "../../../lib/canvas";
+import { computeCoverSlice, drawRoundedRect, getCanvasBackgroundColor } from "../../../lib/canvas";
+import {
+  findAncestorBackdropImage,
+  getBackdropImage,
+  isBackdropImageReady,
+  peekBackdropImage,
+  type AutoGlassBackdrop,
+  type EffectiveGlassBackdrop,
+} from "../../../lib/backdrop";
+import { glassSourcePad } from "../../../lib/glassSourcePad";
 import { useGlobalCssOnce } from "../../../lib/globalCss";
 import { safeReleasePointerCapture, safeSetPointerCapture } from "../../../lib/pointer";
 import useGlassTheme from "../../../hooks/useGlassTheme";
 import useCanvasSourceStyles from "../../../hooks/useCanvasSourceStyles";
 
 const ACTIVE_RELEASE_MS = 320;
-const ACTIVE_LENS_SCALE = 1.85;
+// Active thumb swell, per axis: height grows past the track (the press
+// flourish) while width swells only modestly so the active thumb stays
+// capsule-shaped instead of ballooning wide.
+const ACTIVE_LENS_SCALE_X = 1.5;
+const ACTIVE_LENS_SCALE_Y = 1.85;
 const DRAG_THRESHOLD_PX = 4;
 const DEFORMATION_MAX_PX = 6;
 const DEFORMATION_FALLOFF_PX = 60;
@@ -57,6 +70,8 @@ const SwitchVisual = ({ inert = false }: { inert?: boolean }) => (
 
 const GlassSwitch = ({
   active,
+  glassBackdrop,
+  glassSourceZoom = 1,
   checked,
   className,
   controlHeight,
@@ -105,6 +120,11 @@ const GlassSwitch = ({
   const isControlled = checked !== undefined;
   const [uncontrolledChecked, setUncontrolledChecked] = useState(defaultChecked);
   const [controlSize, setControlSize] = useState({ height: 0, width: 0 });
+  const [, setBackdropLoadVersion] = useState(0);
+  // Ancestor background-image discovery: image backdrops are dynamic when
+  // the image is an ANCESTOR's CSS background (sibling layers still need the
+  // glassBackdrop prop — visual stacking is not DOM ancestry).
+  const [autoBackdrop, setAutoBackdrop] = useState<AutoGlassBackdrop | null>(null);
   const [dragRatio, setDragRatio] = useState<number | null>(null);
   const currentChecked = isControlled ? checked : uncontrolledChecked;
   const checkedRatio = currentChecked ? 1 : 0;
@@ -114,7 +134,7 @@ const GlassSwitch = ({
   const thumbInsetX = sizePreset.thumbInsetX;
   const lens = {
     ...sizePreset.lens,
-    ...glassLens
+    ...glassLens,
   };
   // The press state machine (pressed + post-release hold) comes from the
   // material layer; the switch drives it imperatively from its own gesture
@@ -122,20 +142,22 @@ const GlassSwitch = ({
   const press = useGlassPress({
     forcePressed: active === true,
     holdMs: ACTIVE_RELEASE_MS,
-    tween: false
+    tween: false,
   });
   const isActive = press.pressed;
   const resolvedControlHeight = controlHeight ?? Math.max(sizePreset.controlHeight, lens.height);
   const resolvedSwitchWidthValue = switchWidth ?? sizePreset.switchWidth;
   const resolvedSwitchWidth =
-    typeof resolvedSwitchWidthValue === "number" ? `${resolvedSwitchWidthValue}px` : String(resolvedSwitchWidthValue);
+    typeof resolvedSwitchWidthValue === "number"
+      ? `${resolvedSwitchWidthValue}px`
+      : String(resolvedSwitchWidthValue);
   const resolvedTrackHeight = trackHeight ?? sizePreset.trackHeight;
   const canRenderGlass = !disabled && isActive && controlSize.width > 0 && controlSize.height > 0;
   const deformation = useGlassDeformation(deformRef, {
     enabled: materialDeformation && !disabled,
     sizePx: lens.width,
     maxPx: DEFORMATION_MAX_PX,
-    falloffPx: DEFORMATION_FALLOFF_PX
+    falloffPx: DEFORMATION_FALLOFF_PX,
   });
   const lensGeometry = useMemo(() => {
     const availableWidth = Math.max(0, controlSize.width - thumbInsetX * 2);
@@ -146,13 +168,28 @@ const GlassSwitch = ({
     return {
       lensTravelCenterX: thumbInsetX + travel / 2,
       lensX,
-      lensY
+      lensY,
     };
   }, [controlSize.height, controlSize.width, lens.height, lens.width, thumbInsetX, visualRatio]);
-  const renderedLensWidth = isActive ? lens.width * ACTIVE_LENS_SCALE : lens.width;
-  const renderedLensHeight = isActive ? lens.height * ACTIVE_LENS_SCALE : lens.height;
+  const renderedLensWidth = isActive ? lens.width * ACTIVE_LENS_SCALE_X : lens.width;
+  const renderedLensHeight = isActive ? lens.height * ACTIVE_LENS_SCALE_Y : lens.height;
   const renderedLensX = lensGeometry.lensX - (renderedLensWidth - lens.width) / 2;
   const renderedLensY = lensGeometry.lensY - (renderedLensHeight - lens.height) / 2;
+  // Demagnifying lenses sample beyond the control; pad the source world so
+  // the rim shows backdrop, not the clone's edge. The active thumb overhangs
+  // the control (ACTIVE_LENS_SCALE_X/Y), so the pad also covers that overhang.
+  const lensOverhang = Math.max(
+    0,
+    -renderedLensX,
+    -renderedLensY,
+    renderedLensX + renderedLensWidth - controlSize.width,
+    renderedLensY + renderedLensHeight - controlSize.height,
+  );
+  const zoomReach =
+    glassSourceZoom < 1
+      ? (1 / Math.max(0.05, glassSourceZoom) - 1) * (Math.max(renderedLensWidth, renderedLensHeight) / 2)
+      : 0;
+  const sourcePad = glassSourcePad(lens, lensOverhang, zoomReach);
   const lensSourceX =
     lensGeometry.lensTravelCenterX + (lensGeometry.lensX - lensGeometry.lensTravelCenterX) * 0.55;
 
@@ -166,35 +203,79 @@ const GlassSwitch = ({
       return {
         trackColor: hostStyle.getPropertyValue("--lgds-switch-track-bg").trim() || resolvedTrackColor,
         fillColor: hostStyle.getPropertyValue("--lgds-switch-fill-bg").trim() || resolvedFillColor,
-        sourceBackground: getCanvasBackgroundColor(control)
+        sourceBackground: getCanvasBackgroundColor(control),
       };
     },
-    [theme, resolvedTrackColor, resolvedFillColor, controlSize.width, controlSize.height]
+    [theme, resolvedTrackColor, resolvedFillColor, controlSize.width, controlSize.height],
   );
 
   // Drag repaints are preserved by construction: visualRatio changes per drag
   // frame, theme/CSS changes flow through the sampled style key.
-  const sourceVersion = `${visualRatio}|${sourceStyles.key}|${resolvedTrackHeight}|${trackInsetX}`;
+  const effectiveBackdrop: EffectiveGlassBackdrop | undefined =
+    glassBackdrop ?? autoBackdrop ?? undefined;
+  // With a backdrop the cover slice is sampled from live layout rects at
+  // draw time, so that path keeps closure-identity keying (button pattern).
+  const sourceVersion = effectiveBackdrop
+    ? undefined
+    : `${visualRatio}|${sourceStyles.key}|${resolvedTrackHeight}|${trackInsetX}|${sourcePad}|${glassSourceZoom}`;
+  // Backdrop refraction needs pixel sampling; the DOM-clone SVG path cannot
+  // draw the image, so backdrop forces the canvas/webgl path (like GlassButton).
+  const resolvedRenderer =
+    effectiveBackdrop && (renderer === undefined || renderer === "auto") ? "webgl" : renderer;
 
   const drawSource: GlassCanvasSource = ({ ctx, metrics }) => {
     const styles = sourceStyles.get();
     const trackColor = styles?.trackColor ?? resolvedTrackColor;
     const fillColor = styles?.fillColor ?? resolvedFillColor;
     const sourceBackground = styles?.sourceBackground ?? "#ffffff";
-    const trackWidth = Math.max(0, metrics.sourceWidth - trackInsetX * 2);
+    // Track coordinates live in control space, offset by the source pad
+    // (vertical centering is pad-invariant since padding is symmetric).
+    const trackLeft = sourcePad + trackInsetX;
+    const trackWidth = Math.max(0, metrics.sourceWidth - trackLeft * 2);
     const trackTop = metrics.sourceHeight / 2 - resolvedTrackHeight / 2;
 
     ctx.fillStyle = sourceBackground;
     ctx.fillRect(0, 0, metrics.sourceWidth, metrics.sourceHeight);
-    drawRoundedRect(ctx, trackInsetX, trackTop, trackWidth, resolvedTrackHeight, resolvedTrackHeight / 2);
+    const control = controlRef.current;
+    if (effectiveBackdrop && control) {
+      const image = peekBackdropImage(effectiveBackdrop.image);
+      if (isBackdropImageReady(image)) {
+        const anchorElement =
+          effectiveBackdrop.anchorElement ??
+          effectiveBackdrop.anchor?.current ??
+          (control.offsetParent as HTMLElement | null) ??
+          control;
+        const rect = control.getBoundingClientRect();
+        // Target = the PADDED source box, so the demagnify surround shows
+        // real backdrop instead of the flat fill.
+        const slice = computeCoverSlice({
+          imageWidth: image.naturalWidth,
+          imageHeight: image.naturalHeight,
+          anchor: anchorElement.getBoundingClientRect(),
+          target: { left: rect.left - sourcePad, top: rect.top - sourcePad }
+        });
+        ctx.drawImage(image, slice.x, slice.y, slice.width, slice.height);
+      }
+    }
+    drawRoundedRect(ctx, trackLeft, trackTop, trackWidth, resolvedTrackHeight, resolvedTrackHeight / 2);
     ctx.fillStyle = trackColor;
     ctx.fill();
     ctx.globalAlpha = visualRatio;
-    drawRoundedRect(ctx, trackInsetX, trackTop, trackWidth, resolvedTrackHeight, resolvedTrackHeight / 2);
+    drawRoundedRect(ctx, trackLeft, trackTop, trackWidth, resolvedTrackHeight, resolvedTrackHeight / 2);
     ctx.fillStyle = fillColor;
     ctx.fill();
     ctx.globalAlpha = 1;
   };
+
+  const backdropImageUrl = effectiveBackdrop?.image;
+  useEffect(() => {
+    if (!backdropImageUrl || typeof window === "undefined") return undefined;
+    const image = getBackdropImage(backdropImageUrl);
+    if (image.complete && image.naturalWidth > 0) return undefined;
+    const handleLoad = () => setBackdropLoadVersion((version) => version + 1);
+    image.addEventListener("load", handleLoad);
+    return () => image.removeEventListener("load", handleLoad);
+  }, [backdropImageUrl]);
 
   useEffect(() => {
     const control = controlRef.current;
@@ -203,6 +284,12 @@ const GlassSwitch = ({
     const updateSize = () => {
       const rect = control.getBoundingClientRect();
       setControlSize({ height: rect.height, width: rect.width });
+      const discovered = findAncestorBackdropImage(control);
+      setAutoBackdrop((previous) =>
+        previous?.image === discovered?.image && previous?.anchorElement === discovered?.anchorElement
+          ? previous
+          : discovered,
+      );
     };
     updateSize();
 
@@ -384,7 +471,7 @@ const GlassSwitch = ({
           "--lgds-switch-track-inset-x": `${trackInsetX}px`,
           "--lgds-switch-text": theme.component.text,
           "--lgds-switch-muted": theme.component.textMuted,
-          ...style
+          ...style,
         } as CSSProperties
       }
     >
@@ -429,17 +516,30 @@ const GlassSwitch = ({
                   engineMode={engineMode}
                   sourceVersion={sourceVersion}
                   lens={{ ...lens, width: renderedLensWidth, height: renderedLensHeight }}
-                  lensX={lensSourceX - (renderedLensWidth - lens.width) / 2}
-                  lensY={renderedLensY}
-                  renderer={renderer}
+                  lensX={lensSourceX - (renderedLensWidth - lens.width) / 2 + sourcePad}
+                  lensY={renderedLensY + sourcePad}
+                  renderer={resolvedRenderer}
+                  sourceZoom={glassSourceZoom}
                   sourceChildren={
-                    <>
-                      <LensSourceBackground />
-                      <SwitchVisual inert />
-                    </>
+                    effectiveBackdrop ? undefined : (
+                      <>
+                        <LensSourceBackground />
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: sourcePad,
+                          top: sourcePad,
+                          width: controlSize.width,
+                          height: controlSize.height,
+                        }}
+                      >
+                          <SwitchVisual inert />
+                        </span>
+                      </>
+                    )
                   }
-                  sourceHeight={controlSize.height}
-                  sourceWidth={controlSize.width}
+                  sourceHeight={controlSize.height + sourcePad * 2}
+                  sourceWidth={controlSize.width + sourcePad * 2}
                   surfaceClassName={glassSurfaceClassName}
                   surfaceBlur={glassSurfaceBlur}
                   surfaceTone="clear"

@@ -6,7 +6,7 @@ import { ComponentDock } from "./ComponentDock";
 import { ControlCenterDemo } from "./ControlCenterDemo";
 import { DynamicIslandDemo } from "./DynamicIslandDemo";
 import { LockScreenKeypad } from "./LockScreenKeypad";
-import { PAINTING_URL, type ComponentVisibility, type IphoneScreen, type IslandDemo, type StageMode } from "../playgroundConfig";
+import { PAINTING_URL, type ComponentVisibility, type IphoneScreen, type IslandDemo, type PreviewBackground, type StageMode } from "../playgroundConfig";
 import { formatHighlightPosition, formatHighlightRotation, safeHasPointerCapture, safeSetPointerCapture } from "../playgroundUtils";
 
 interface PlaygroundStageProps {
@@ -31,8 +31,11 @@ interface PlaygroundStageProps {
   position: { x: number; y: number };
   positions: Array<{ x: number; y: number }>;
   pressHighlight: GlassPressHighlight;
+  previewActive: boolean;
+  previewBackground: PreviewBackground;
   renderer: LiquidGlassRenderer;
   sliderValue: number;
+  sourceZoom: number;
   sourceRef: RefObject<HTMLDivElement | null>;
   stageMode: StageMode;
   switchLensOverrideEnabled: boolean;
@@ -63,8 +66,11 @@ export const PlaygroundStage = memo(function PlaygroundStage({
   position,
   positions,
   pressHighlight,
+  previewActive,
+  previewBackground,
   renderer,
   sliderValue,
+  sourceZoom,
   sourceRef,
   stageMode,
   switchLensOverrideEnabled,
@@ -143,8 +149,11 @@ export const PlaygroundStage = memo(function PlaygroundStage({
         onModalOpen={onModalOpen}
         onSliderValueChange={onSliderValueChange}
         pressHighlight={pressHighlight}
+        previewActive={previewActive}
+        previewBackground={previewBackground}
         renderer={renderer}
         sliderValue={sliderValue}
+        sourceZoom={sourceZoom}
         switchLensOverrideEnabled={switchLensOverrideEnabled}
         visibility={visibility}
       />

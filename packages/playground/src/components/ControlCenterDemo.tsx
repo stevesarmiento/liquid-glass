@@ -18,6 +18,7 @@ import type {
   ResolvedLensParams,
 } from "liquid-glass";
 import { GlassNode, useElementSize } from "liquid-glass/react";
+import { forwardLensOptics } from "../playgroundUtils";
 import {
   IconAirplane,
   IconAntennaRadiowavesLeftAndRight,
@@ -571,19 +572,6 @@ function controlCenterLens(
 ): Partial<LensParams> {
   return {
     radius: caps.radius,
-    scaleX: lens.scaleX,
-    scaleY: lens.scaleY,
-    chroma: lens.chroma,
-    depth: Math.min(lens.depth, caps.depth),
-    dome: Math.min(lens.dome, caps.dome),
-    splay: lens.splay,
-    glow: lens.glow,
-    edge: lens.edge,
-    glowSpread: lens.glowSpread,
-    glowExponent: lens.glowExponent,
-    edgeExponent: lens.edgeExponent,
-    specularRotation: lens.specularRotation,
-    blur: Math.min(lens.blur, caps.blur),
-    mapSize: Math.min(lens.mapSize, caps.mapSize),
+    ...forwardLensOptics(lens, caps),
   };
 }

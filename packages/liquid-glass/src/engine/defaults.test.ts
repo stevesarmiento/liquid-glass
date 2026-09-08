@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_LENS_PARAMS, normalizeLensParams, quantizeLensSizeUp } from "./defaults";
+import {
+  DEFAULT_LENS_PARAMS,
+  LENS_PARAM_LIMITS,
+  normalizeLensParams,
+  quantizeLensSizeUp,
+} from "./defaults";
 import type { ResolvedLensParams } from "./types";
+
+describe("LENS_PARAM_LIMITS", () => {
+  it("has one entry per default, in the same key order", () => {
+    // Docs tables iterate DEFAULT_LENS_PARAMS keys and index into the limits
+    // table, so both key sets AND their order must stay in lockstep.
+    expect(Object.keys(LENS_PARAM_LIMITS)).toEqual(Object.keys(DEFAULT_LENS_PARAMS));
+  });
+
+  it("contains every default within its own range", () => {
+    for (const [key, limit] of Object.entries(LENS_PARAM_LIMITS)) {
+      const value = DEFAULT_LENS_PARAMS[key as keyof ResolvedLensParams];
+      expect(value).toBeGreaterThanOrEqual(limit.min);
+      expect(value).toBeLessThanOrEqual(limit.max);
+    }
+  });
+});
 
 describe("normalizeLensParams", () => {
   it("returns the defaults exactly for empty input", () => {
@@ -14,8 +35,8 @@ describe("normalizeLensParams", () => {
   const STATIC_RANGES: Array<[keyof ResolvedLensParams, number, number]> = [
     ["width", 1, 4096],
     ["height", 1, 4096],
-    ["scaleX", 0, 512],
-    ["scaleY", 0, 512],
+    ["scaleX", -512, 512],
+    ["scaleY", -512, 512],
     ["chroma", 0, 8],
     ["dome", 0, 4096],
     ["splay", 0.001, 1],
@@ -42,10 +63,10 @@ describe("normalizeLensParams", () => {
     );
   });
 
-  it("caps radius and depth at min(width, height) / 2", () => {
+  it("caps radius at min(width, height) / 2 and depth at min(width, height)", () => {
     const out = normalizeLensParams({ width: 200, height: 80, radius: 500, depth: 500 });
     expect(out.radius).toBe(40);
-    expect(out.depth).toBe(40);
+    expect(out.depth).toBe(80);
     const under = normalizeLensParams({ width: 200, height: 80, radius: 12, depth: 9 });
     expect(under.radius).toBe(12);
     expect(under.depth).toBe(9);
@@ -60,9 +81,7 @@ describe("normalizeLensParams", () => {
     for (const key of Object.keys(DEFAULT_LENS_PARAMS) as Array<keyof ResolvedLensParams>) {
       expect(normalizeLensParams({ [key]: Number.NaN })[key]).toBe(DEFAULT_LENS_PARAMS[key]);
       expect(normalizeLensParams({ [key]: Number.POSITIVE_INFINITY })[key]).toBe(
-        key === "width" || key === "height"
-          ? 4096
-          : normalizeLensParams({ [key]: Number.POSITIVE_INFINITY })[key],
+        DEFAULT_LENS_PARAMS[key],
       );
     }
   });

@@ -93,3 +93,21 @@ describe("setGlassQualityOverride", () => {
     expect(getGlassQualityLevel()).toBe(0);
   });
 });
+
+describe("idle relax", () => {
+  it("relax() steps back toward full quality and clamps at 0", () => {
+    const governor = createGlassQualityGovernor({ degradeFrames: 1, dwellMs: 0 });
+    // Degrade to 3 with sustained jank.
+    for (let i = 0; i < 500; i += 1) governor.step(40, i * 40);
+    expect(governor.level).toBe(3);
+    expect(governor.relax(1_000_000)).toBe(true);
+    expect(governor.level).toBe(2);
+    governor.relax(1_000_001);
+    governor.relax(1_000_002);
+    expect(governor.level).toBe(0);
+    // Already at full quality: no-op.
+    expect(governor.relax(1_000_003)).toBe(false);
+    expect(governor.level).toBe(0);
+  });
+});
+

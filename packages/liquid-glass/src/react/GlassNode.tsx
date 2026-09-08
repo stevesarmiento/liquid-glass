@@ -52,6 +52,13 @@ export interface GlassNodeProps {
   lensY: number;
   renderer?: GlassRendererMode;
   engineMode?: LiquidGlassEngineMode;
+  /**
+   * Uniform zoom of the source about the lens center, applied BEFORE the
+   * displacement filter. < 1 shows a literal minified view of the source, so
+   * the lens optics only carry edge character (bend/fold/fringe) instead of
+   * having to synthesize the minification physically. Default 1 (off).
+   */
+  sourceZoom?: number;
   sourceChildren?: ReactNode;
   drawSource?: GlassCanvasSource;
   /**
@@ -111,6 +118,7 @@ export function GlassNode({
   sourceChildren,
   drawSource,
   sourceVersion,
+  sourceZoom = 1,
   className,
   contentClassName,
   surfaceClassName,
@@ -304,7 +312,9 @@ export function GlassNode({
     // content is unchanged. lensX/lensY are folded in because they are part
     // of the draw metrics a source may legitimately read.
     const sceneKey =
-      sourceVersion !== undefined ? `v:${sourceVersion}|${lensX},${lensY}` : undefined;
+      sourceVersion !== undefined
+        ? `v:${sourceVersion}|${lensX},${lensY}|z:${sourceZoom}`
+        : undefined;
 
     if (useWebglBackend) {
       let entry = webglRef.current;
@@ -340,6 +350,7 @@ export function GlassNode({
         lensY,
         source,
         sceneKey,
+        sourceZoom,
       });
       const rendered = build !== null && entry.instance.update(build.input);
       if (rendered && build) {
@@ -371,6 +382,7 @@ export function GlassNode({
       lensX,
       lensY,
       source,
+      sourceZoom,
     });
   }, [
     activeRenderer,
@@ -385,6 +397,7 @@ export function GlassNode({
     lensY,
     sourceHeight,
     sourceWidth,
+    sourceZoom,
     readyVersion,
     useWebglBackend,
   ]);
@@ -422,7 +435,11 @@ export function GlassNode({
               className="lg-glass-node__source"
               style={{
                 height: sourceHeight,
-                transform: `translate3d(${filterBleed}px, ${filterBleed}px, 0)`,
+                // Zoom about the lens center BEFORE the displacement filter
+                // (the filter lives on the parent span, so it sees the
+                // already-zoomed source).
+                transform: `translate3d(${filterBleed}px, ${filterBleed}px, 0) scale(${sourceZoom})`,
+                transformOrigin: `${lensX + lens.width / 2}px ${lensY + lens.height / 2}px`,
                 width: sourceWidth,
               }}
             >
@@ -459,6 +476,7 @@ export function GlassNode({
             "--lg-glass-highlight-x": formatHighlightPosition(tint.highlightX),
             "--lg-glass-highlight-y": formatHighlightPosition(tint.highlightY),
             "--lg-glass-radius": formatCssLength(lens.radius),
+            "--lg-glass-shine-blur": `${Math.max(2, Math.min(10, Math.min(lens.width, lens.height) * 0.15))}px`,
             "--lg-glass-saturation": tint.saturation,
             "--lg-glass-shadow": tint.shadow,
             "--lg-glass-surface-blur": formatCssLength(surfaceBlur),
@@ -493,7 +511,7 @@ function LocalSvgFilter({
   scaleX: number;
   scaleY: number;
 }): ReactElement {
-  const baseScale = Math.max(scaleX, scaleY);
+  const baseScale = Math.max(Math.abs(scaleX), Math.abs(scaleY));
   const specStrength = Math.max(0, Math.min(3, lens.glow + lens.edge));
 
   return (

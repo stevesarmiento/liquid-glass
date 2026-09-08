@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type GlassPressHighlight } from "@liquid-glass/design-system";
 
 import {
   createGlassTint,
   createLiquidGlassEngine,
   resolveGlassTint,
+  setGlassQualityOverride,
   type GlassTintName,
   type LensParams,
   type LiquidGlassEngineMode,
@@ -25,15 +26,19 @@ import {
   INITIAL_LENS,
   INITIAL_RENDERER,
   INITIAL_VISIBILITY,
+  LENS_STAGE_PRESETS,
   PAINTING_URL,
   WALLPAPERS,
   type ComponentVisibility,
   type IphoneScreen,
+  type LensStagePresetId,
+  type PreviewBackground,
   type StageMode,
   type TintMode,
   type VisibilityKey,
   type WallpaperId,
 } from "./playgroundConfig";
+import { recordDebugState } from "./debugTrap";
 
 export default function App() {
   const [lens, setLens] = useState<ResolvedLensParams>(INITIAL_LENS);
@@ -53,6 +58,18 @@ export default function App() {
   const [iphoneScreen, setIphoneScreen] = useState<IphoneScreen>("home");
   const [sceneMenuOpen, setSceneMenuOpen] = useState(false);
   const [pressHighlight, setPressHighlight] = useState<GlassPressHighlight>("natural");
+  const [previewBackground, setPreviewBackground] = useState<PreviewBackground>("light");
+  // Global preview state: components render their held-active glass stage.
+  const [previewActive, setPreviewActive] = useState(true);
+  // OFF by default: the tuning surface must show true full-quality output.
+  // The adaptive governor otherwise degrades to surface-only under sustained
+  // slider scrubbing — pills silently losing their refraction mid-tuning was
+  // the "glass goes black" mystery (with a dark tint the chrome-only
+  // fallback reads as a black pill).
+  const [adaptiveQuality, setAdaptiveQuality] = useState(false);
+  // Global source zoom for component previews (1 = off; < 1 = literal
+  // minified source view, optics carry only edge character).
+  const [sourceZoom, setSourceZoom] = useState(1);
   const [wallpaperId, setWallpaperId] = useState<WallpaperId>("painting");
   // Wallpaper toggles only apply to the iPhone scene; the full-bleed
   // painting stage always shows the painting.
@@ -61,6 +78,10 @@ export default function App() {
       ? (WALLPAPERS.find((wallpaper) => wallpaper.id === wallpaperId) ?? WALLPAPERS[0]).url
       : PAINTING_URL;
   const engine = useMemo(() => createLiquidGlassEngine({ mode: engineMode }), [engineMode]);
+  useEffect(() => {
+    setGlassQualityOverride(adaptiveQuality ? null : 0);
+    recordDebugState("adaptiveQuality", adaptiveQuality);
+  }, [adaptiveQuality]);
   const glassTint = tintMode === "preset" ? tintName : customTint;
   // Memoized: a fresh tint object every render would bust PlaygroundStage's
   // memo and cascade full glass repaints into every lens on the stage.
@@ -106,13 +127,43 @@ export default function App() {
 
   function updateLens(key: keyof LensParams, value: number) {
     setSwitchLensOverrideEnabled(true);
-    setLens((current) => ({
-      ...current,
-      [key]: key === "mapSize" ? Math.round(value) : value,
-    }));
+    setLens((current) => {
+      const next = {
+        ...current,
+        [key]: key === "mapSize" ? Math.round(value) : value,
+      };
+      // Ring-buffered for the black-glass incident trap (see debugTrap.ts).
+      recordDebugState(`lens:${key}`, next);
+      return next;
+    });
+  }
+
+  // Stage pointer drags move the filter region every frame but never went
+  // through updateLens — record them (throttled) so incident reports show
+  // what interaction preceded a breakage even when no slider was touched.
+  const lastPointerRecordAt = useRef(0);
+  const recordedLensPointer = useCallback(
+    (event: Parameters<typeof handlePointer>[0], isDown?: boolean) => {
+      const now = Date.now();
+      if (isDown || now - lastPointerRecordAt.current > 150) {
+        lastPointerRecordAt.current = now;
+        recordDebugState("stage:pointer", { isDown: isDown === true });
+      }
+      handlePointer(event, isDown);
+    },
+    [handlePointer],
+  );
+
+  function applyLensPreset(id: LensStagePresetId) {
+    recordDebugState("preset", id);
+    const preset = LENS_STAGE_PRESETS.find((entry) => entry.id === id);
+    if (!preset) return;
+    setSwitchLensOverrideEnabled(true);
+    setLens({ ...preset.lens });
   }
 
   function updateCustomTint(key: keyof typeof INITIAL_CUSTOM_TINT, value: string | number) {
+    recordDebugState(`tint:${key}`, value);
     setTintMode("custom");
     setCustomTint((current) => ({
       ...current,
@@ -128,7 +179,13 @@ export default function App() {
   }
 
   return (
-    <main className="shell">
+    <main
+      className="shell"
+      // A tuning surface has no legitimate native drag-and-drop: pointer
+      // drags belong to the lens/sliders. Without this, press-drags over
+      // icons/canvases/selected text sometimes start a browser drag ghost.
+      onDragStart={(event) => event.preventDefault()}
+    >
       <PlaygroundStage
         backgroundUrl={backgroundUrl}
         blend={blend}
@@ -144,15 +201,18 @@ export default function App() {
         islandExpanded={islandExpanded}
         lens={lens}
         onIslandCycle={cycleIsland}
-        onLensPointer={handlePointer}
+        onLensPointer={recordedLensPointer}
         onLensPositionCommit={commitLensPosition}
         onModalOpen={openModal}
         onSliderValueChange={setSliderValue}
         position={position}
         positions={positions}
         pressHighlight={pressHighlight}
+        previewActive={previewActive}
+        previewBackground={previewBackground}
         renderer={INITIAL_RENDERER}
         sliderValue={sliderValue}
+        sourceZoom={sourceZoom}
         sourceRef={sourceRef}
         stageMode={stageMode}
         switchLensOverrideEnabled={switchLensOverrideEnabled}
@@ -194,7 +254,10 @@ export default function App() {
         floatingControlsRef={floatingControlsRef}
         isControlsDragging={isControlsDragging}
         lens={lens}
-        onBlendChange={setBlend}
+        onBlendChange={(value) => {
+          recordDebugState("blend", value);
+          setBlend(value);
+        }}
         onControlsDragStart={handleControlsDragStart}
         onControlsOpenChange={setControlsOpen}
         onCustomTintChange={updateCustomTint}
@@ -202,11 +265,23 @@ export default function App() {
         onDualLensChange={setDualLens}
         onEngineModeChange={setEngineMode}
         onLensChange={updateLens}
+        onLensPresetSelect={applyLensPreset}
         onPressHighlightChange={setPressHighlight}
         onTintModeChange={setTintMode}
         onTintNameChange={setTintName}
+        onAdaptiveQualityChange={setAdaptiveQuality}
+        adaptiveQuality={adaptiveQuality}
+        onPreviewActiveChange={setPreviewActive}
+        onSourceZoomChange={(value) => {
+          recordDebugState("sourceZoom", value);
+          setSourceZoom(value);
+        }}
+        sourceZoom={sourceZoom}
+        onPreviewBackgroundChange={setPreviewBackground}
         onVisibilityChange={updateVisibility}
         pressHighlight={pressHighlight}
+        previewActive={previewActive}
+        previewBackground={previewBackground}
         stats={stats}
         tintMode={tintMode}
         tintName={tintName}

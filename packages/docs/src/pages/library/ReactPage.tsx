@@ -85,7 +85,7 @@ const MATERIAL_ROWS: PropRow[] = [
     name: "useGlassPress",
     type: "(options?: GlassPressOptions) => GlassPress",
     description:
-      "The glass press state machine: pressed state with a post-release hold (holdMs, default 320ms), a rAF press tween (progress 0..1, ease-out cubic, reduced-motion aware), spreadable handlers with pointer-capture safety and Space/Enter parity, imperative press/holdRelease/releaseIfIdle/cancel for custom gestures, and boostLens for progress-scaled optics (scale ×1.15, +0.45 glow by default).",
+      "The glass press state machine: pressed state with a post-release hold (holdMs, default 320ms), a rAF press tween (progress 0..1, ease-out cubic, reduced-motion aware), spreadable handlers with pointer-capture safety and Space/Enter parity, imperative press/holdRelease/releaseIfIdle/cancel for custom gestures, and boostLens for progress-scaled optics (scale ×1.15, +0.45 glow by default). In the design system, GlassButton and GlassDropdown press with holdMs 70 and a 180ms release tween; GlassSwitch keeps the 320ms hold and additionally scales the lens size while active (width ×1.35, height ×1.85 — a geometry boost, distinct from boostLens's optics boost).",
   },
   {
     name: "useGlassDeformation",
